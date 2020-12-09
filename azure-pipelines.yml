@@ -43,3 +43,10 @@ jobs:
       configuration: '$(buildConfiguration)'
       msbuildArgs: '/p:AppxBundlePlatforms="$(buildPlatform)" /p:AppxPackageDir="$(appxPackageDir)" /p:AppxBundle=Always /p:UapAppxPackageBuildMode=StoreUpload /m /target:build\CMakePredefinedTargets\ALL_BUILD:INSTALL'
       maximumCpuCount: true
+      createLogFile: true
+
+  - task: CopyFiles@2
+    inputs:
+      SourceFolder: 'build'
+      Contents: '**'
+      TargetFolder: '$(build.artifactstagingdirectory)'
