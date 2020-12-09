@@ -15,8 +15,8 @@ jobs:
 
   variables:
     solution: '**/LLVM.sln'
-    buildPlatform: 'x64'
-    buildConfiguration: 'Debug'
+    #buildPlatform: 'x64'
+    #buildConfiguration: 'Debug'
     appxPackageDir: '$(build.artifactStagingDirectory)\AppxPackages\\'
 
   steps:
@@ -41,5 +41,5 @@ jobs:
       platform: '$(buildPlatform)'
       solution: '$(solution)'
       configuration: '$(buildConfiguration)'
-      msbuildArgs: '/p:AppxBundlePlatforms="$(buildPlatform)" /p:AppxPackageDir="$(appxPackageDir)" /p:AppxBundle=Always /p:UapAppxPackageBuildMode=StoreUpload /m /target:CMakePredefinedTargets:INSTALL'
+      msbuildArgs: '/p:AppxBundlePlatforms="$(buildPlatform)" /p:AppxPackageDir="$(appxPackageDir)" /p:AppxBundle=Always /p:UapAppxPackageBuildMode=StoreUpload /m /target:CMakePredefinedTargets\ALL_BUILD:INSTALL'
       maximumCpuCount: true
