@@ -6,39 +6,37 @@
 trigger:
 - main
 
-pool:
-  vmImage: 'windows-latest'
+jobs:
+- job: Default
+  timeoutInMinutes: 0
 
-variables:
-  solution: '**/*.sln'
-  buildPlatform: 'x64'
-  buildConfiguration: 'Debug'
-  appxPackageDir: '$(build.artifactStagingDirectory)\AppxPackages\\'
+  pool:
+    vmImage: 'windows-latest'
 
-resources:
-  repositories:
-  - repository: self # このファイルが配置してあるディレクトリ配下
-    clean: true
-    fetchDepth: 1
+  variables:
+    solution: '**/*.sln'
+    buildPlatform: 'x64'
+    buildConfiguration: 'Debug'
+    appxPackageDir: '$(build.artifactStagingDirectory)\AppxPackages\\'
 
-steps:
-- task: NuGetToolInstaller@1
+  steps:
+  - task: NuGetToolInstaller@1
 
-- task: NuGetCommand@2
-  inputs:
-    restoreSolution: '$(solution)'
+  - task: NuGetCommand@2
+    inputs:
+      restoreSolution: '$(solution)'
 
-# CMake
-# Build with the CMake cross-platform build system
-- task: CMake@1
-  inputs:
-    workingDirectory: 'build'
-    cmakeArgs: '-G "Visual Studio 16 2019" -DCMAKE_PREFIX_PATH=$(build.artifactStagingDirectory)/$(buildConfiguration) -DLLVM_ENABLE_PROJECTS=clang -DLLVM_BUILD_EXAMPLES=ON -DCLANG_BUILD_EXAMPLES=ON -Thost=x64 ../llvm/'
+  # CMake
+  # Build with the CMake cross-platform build system
+  - task: CMake@1
+    inputs:
+      workingDirectory: 'build'
+      cmakeArgs: '-G "Visual Studio 16 2019" -DCMAKE_PREFIX_PATH=$(build.artifactStagingDirectory)/$(buildConfiguration) -DLLVM_ENABLE_PROJECTS=clang -DLLVM_BUILD_EXAMPLES=ON -DCLANG_BUILD_EXAMPLES=ON -Thost=x64 ../llvm/'
 
-- task: VSBuild@1
-  inputs:
-    platform: '$(buildPlatform)'
-    solution: '$(solution)'
-    configuration: '$(buildConfiguration)'
-    msbuildArgs: '/p:AppxBundlePlatforms="$(buildPlatform)" /p:AppxPackageDir="$(appxPackageDir)" /p:AppxBundle=Always /p:UapAppxPackageBuildMode=StoreUpload /m'
-    maximumCpuCount: true
+  - task: VSBuild@1
+    inputs:
+      platform: '$(buildPlatform)'
+      solution: '$(solution)'
+      configuration: '$(buildConfiguration)'
+      msbuildArgs: '/p:AppxBundlePlatforms="$(buildPlatform)" /p:AppxPackageDir="$(appxPackageDir)" /p:AppxBundle=Always /p:UapAppxPackageBuildMode=StoreUpload /m'
+      maximumCpuCount: true
