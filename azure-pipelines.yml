@@ -51,9 +51,8 @@ jobs:
       SourceFolder: 'build'
       Contents: '**'
       TargetFolder: '$(build.artifactstagingdirectory)'
-  - task: DownloadBuildArtifacts@0
+
+  - task: PublishBuildArtifacts@1
     inputs:
-      buildType: 'current'
-      downloadType: 'single'
-      artifactName: 'artifact'
-      downloadPath: '$(System.ArtifactsDirectory)'
+      pathToPublish: '$(Build.ArtifactStagingDirectory)'
+      artifactName: drop
