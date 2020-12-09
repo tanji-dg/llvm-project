@@ -51,3 +51,9 @@ jobs:
       SourceFolder: 'build'
       Contents: '**'
       TargetFolder: '$(build.artifactstagingdirectory)'
+  - task: DownloadBuildArtifacts@0
+    inputs:
+      buildType: 'current'
+      downloadType: 'single'
+      artifactName: 'artifact'
+      downloadPath: '$(System.ArtifactsDirectory)'
