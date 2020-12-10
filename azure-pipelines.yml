@@ -49,11 +49,11 @@ jobs:
       workingDirectory: 'build'
       cmakeArgs: '--build . --config $(buildConfigration) --target install'
 
-  - task: CopyFiles@2
-    inputs:
-      SourceFolder: 'build'
-      Contents: '**'
-      TargetFolder: '$(build.artifactstagingdirectory)'
+#  - task: CopyFiles@2
+#    inputs:
+#      SourceFolder: 'build'
+#      Contents: '**'
+#      TargetFolder: '$(build.artifactstagingdirectory)'
 
   - task: PublishBuildArtifacts@1
     inputs:
