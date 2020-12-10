@@ -47,7 +47,7 @@ jobs:
   - task: CMake@1
     inputs:
       workingDirectory: 'build'
-      cmakeArgs: '--build . --config $(buildConfigration) --target install --parallel'
+      cmakeArgs: '--build . --config $(buildConfigration) --parallel'
 
 #  - task: CopyFiles@2
 #    inputs:
