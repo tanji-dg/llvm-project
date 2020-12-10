@@ -41,10 +41,13 @@ jobs:
       platform: '$(buildPlatform)'
       solution: '$(solution)'
       configuration: '$(buildConfiguration)'
-#      msbuildArgs: '/p:AppxBundlePlatforms="$(buildPlatform)" /p:AppxPackageDir="$(appxPackageDir)" /p:AppxBundle=Always /p:UapAppxPackageBuildMode=StoreUpload /m /target:CMakePredefinedTargets\ALL_BUILD:INSTALL'
-      msbuildArgs: '/p:AppxBundlePlatforms="$(buildPlatform)" /p:AppxPackageDir="$(appxPackageDir)" /p:AppxBundle=Always /p:UapAppxPackageBuildMode=StoreUpload /m /target:clean'
+      msbuildArgs: '/p:AppxBundlePlatforms="$(buildPlatform)" /p:AppxPackageDir="$(appxPackageDir)" /p:AppxBundle=Always /p:UapAppxPackageBuildMode=StoreUpload /m'
       maximumCpuCount: true
-      createLogFile: true
+
+  - task: CMake@1
+    inputs:
+      workingDirectory: 'build'
+      cmakeArgs: '--build . --config $(buildConfigration) --target install'
 
   - task: CopyFiles@2
     inputs:
