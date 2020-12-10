@@ -47,12 +47,12 @@ jobs:
   - task: CMake@1
     inputs:
       workingDirectory: 'build'
-      cmakeArgs: '--build . --config "$(buildConfigration)" --parallel'
+      cmakeArgs: '--build . --config "$(buildConfiguration)" --parallel'
 
   - task: CMake@1
     inputs:
       workingDirectory: 'build'
-      cmakeArgs: '--install . --config "$(buildConfigration)" --prefix "$(Build.ArtifactStagingDirectory)/$(buildConfigration)" --parallel'
+      cmakeArgs: '--install . --config "$(buildConfiguration)" --prefix "$(Build.ArtifactStagingDirectory)/$(buildConfiguration)" --parallel'
 
 #  - task: CopyFiles@2
 #    inputs:
