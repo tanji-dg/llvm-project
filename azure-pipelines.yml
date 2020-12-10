@@ -15,8 +15,8 @@ jobs:
 
   variables:
     solution: '$(build.SourcesDirectory)/build/LLVM.sln'
-    #buildPlatform: 'x64'
-    #buildConfiguration: 'Debug'
+    buildPlatform: 'x64'
+    buildConfiguration: 'Debug'
     appxPackageDir: '$(build.artifactStagingDirectory)\AppxPackages\\'
 
   steps:
@@ -34,7 +34,7 @@ jobs:
   - task: CMake@1
     inputs:
       workingDirectory: 'build'
-      cmakeArgs: '-G "Visual Studio 16 2019" -DCMAKE_PREFIX_PATH=$(build.artifactStagingDirectory)/$(buildConfiguration) -DLLVM_ENABLE_PROJECTS=clang -DLLVM_BUILD_EXAMPLES=ON -DCLANG_BUILD_EXAMPLES=ON -Thost=x64 ../llvm/'
+      cmakeArgs: '-G "Visual Studio 16 2019" -DCMAKE_PREFIX_PATH=$(build.artifactStagingDirectory)/$(buildConfiguration) -DLLVM_ENABLE_PROJECTS=clang -DLLVM_BUILD_EXAMPLES=ON -DCLANG_BUILD_EXAMPLES=ON -DBUILD_SHARED_LIBS=ON -Thost=x64 ../llvm/'
 
 #  - task: VSBuild@1
 #    inputs:
