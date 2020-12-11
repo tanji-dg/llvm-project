@@ -16,7 +16,8 @@ jobs:
   variables:
     solution: '$(build.SourcesDirectory)/build/LLVM.sln'
     buildPlatform: 'x64'
-    buildConfiguration: 'Debug'
+#    buildConfiguration: 'Debug'
+    buildConfiguration: 'MinSizeRel'
     appxPackageDir: '$(build.artifactStagingDirectory)\AppxPackages\\'
 
   steps:
@@ -63,4 +64,4 @@ jobs:
   - task: PublishBuildArtifacts@1
     inputs:
       pathToPublish: '$(Build.ArtifactStagingDirectory)'
-      artifactName: drop
+      artifactName: llvm-project
