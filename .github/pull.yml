@@ -2,4 +2,5 @@ version: "1"
 rules:
   - base: autopr
     upstream: llvm:main
-    mergeMethod: merge
+#    mergeMethod: merge
+    mergeMethod: hardrest
