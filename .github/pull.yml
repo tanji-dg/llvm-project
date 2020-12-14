@@ -4,5 +4,5 @@ rules:
     upstream: llvm:main
 #    mergeMethod: merge
 #    mergeMethod: hardreset
-#    mergeMethod: rebase
-    mergeMethod: none
+    mergeMethod: rebase
+#    mergeMethod: none
