@@ -3,5 +3,5 @@ rules:
   - base: autopr
     upstream: llvm:main
 #    mergeMethod: merge
-#    mergeMethod: hardreset
-    mergeMethod: rebase
+    mergeMethod: hardreset
+#    mergeMethod: rebase
