@@ -1,7 +1,6 @@
 version: "1"
 rules:
-#  - base: autopr
-  - base: main
+  - base: autopr
     upstream: llvm:main
 #    mergeMethod: merge
-    mergeMethod: hardrest
+    mergeMethod: hardreset
