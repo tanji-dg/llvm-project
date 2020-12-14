@@ -292,8 +292,16 @@ template <> StoreInst *isCandidate<StoreInst>(Instruction *In) {
   return getIfUnordered(dyn_cast<StoreInst>(In));
 }
 
+#if !defined(_MSC_VER) || _MSC_VER >= 1920
+// VS2017 has trouble compiling this:
+// error C2976: 'std::map': too few template arguments
 template <typename Pred, typename... Ts>
-void erase_if(std::map<Ts...> &map, Pred p) {
+void erase_if(std::map<Ts...> &map, Pred p)
+#else
+template <typename Pred, typename T, typename U>
+void erase_if(std::map<T, U> &map, Pred p)
+#endif
+{
   for (auto i = map.begin(), e = map.end(); i != e;) {
     if (p(*i))
       i = map.erase(i);
@@ -802,14 +810,24 @@ auto AlignVectors::realignGroup(const MoveGroup &Move) const -> bool {
     // Stores.
     ByteSpan ASpanV, ASpanM;
 
+    // Return a vector value corresponding to the input value Val:
+    // either <1 x Val> for scalar Val, or Val itself for vector Val.
+    auto MakeVec = [](IRBuilder<> &Builder, Value *Val) -> Value * {
+      Type *Ty = Val->getType();
+      if (Ty->isVectorTy())
+        return Val;
+      auto *VecTy = VectorType::get(Ty, 1, /*Scalable*/ false);
+      return Builder.CreateBitCast(Val, VecTy);
+    };
+
     for (int i = -1; i != NumSectors; ++i) {
       ByteSpan Section = VSpan.section(i * ScLen, ScLen).normalize();
       Value *AccumV = UndefValue::get(SecTy);
       Value *AccumM = HVC.getNullValue(SecTy);
       for (ByteSpan::Block &S : Section) {
         Value *Pay = getPayload(S.Seg.Val);
-        Value *Mask = HVC.rescale(Builder, getMask(S.Seg.Val), Pay->getType(),
-                                  HVC.getByteTy());
+        Value *Mask = HVC.rescale(Builder, MakeVec(Builder, getMask(S.Seg.Val)),
+                                  Pay->getType(), HVC.getByteTy());
         AccumM = HVC.insertb(Builder, AccumM, HVC.vbytes(Builder, Mask),
                              S.Seg.Start, S.Seg.Size, S.Pos);
         AccumV = HVC.insertb(Builder, AccumV, HVC.vbytes(Builder, Pay),
