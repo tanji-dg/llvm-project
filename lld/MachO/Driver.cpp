@@ -325,7 +325,7 @@ static InputFile *addFile(StringRef path, bool forceLoadArchive) {
     // printArchiveMemberLoad() prints both .a and .o names, so no need to
     // print the .a name here.
     if (config->printEachFile && magic != file_magic::archive)
-      lld::outs() << toString(newFile) << '\n';
+      message(toString(newFile));
     inputFiles.insert(newFile);
   }
   return newFile;
@@ -599,6 +599,22 @@ static void handlePlatformVersion(const opt::Arg *arg) {
     error(Twine("malformed sdk version: ") + sdkVersionStr);
 }
 
+static void handleUndefined(const opt::Arg *arg) {
+  StringRef treatmentStr = arg->getValue(0);
+  config->undefinedSymbolTreatment =
+      llvm::StringSwitch<UndefinedSymbolTreatment>(treatmentStr)
+          .Case("error", UndefinedSymbolTreatment::error)
+          .Case("warning", UndefinedSymbolTreatment::warning)
+          .Case("suppress", UndefinedSymbolTreatment::suppress)
+          .Case("dynamic_lookup", UndefinedSymbolTreatment::dynamic_lookup)
+          .Default(UndefinedSymbolTreatment::unknown);
+  if (config->undefinedSymbolTreatment == UndefinedSymbolTreatment::unknown) {
+    warn(Twine("unknown -undefined TREATMENT '") + treatmentStr +
+         "', defaulting to 'error'");
+    config->undefinedSymbolTreatment = UndefinedSymbolTreatment::error;
+  }
+}
+
 static void warnIfDeprecatedOption(const opt::Option &opt) {
   if (!opt.getGroup().isValid())
     return;
@@ -808,6 +824,9 @@ bool macho::link(llvm::ArrayRef<const char *> argsArr, bool canExitEarly,
       break;
     case OPT_platform_version:
       handlePlatformVersion(arg);
+      break;
+    case OPT_undefined:
+      handleUndefined(arg);
       break;
     default:
       break;

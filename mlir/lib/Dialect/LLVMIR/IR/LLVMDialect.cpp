@@ -120,8 +120,8 @@ static ParseResult parseCmpOp(OpAsmParser &parser, OperationState &result) {
 static void printAllocaOp(OpAsmPrinter &p, AllocaOp &op) {
   auto elemTy = op.getType().cast<LLVM::LLVMType>().getPointerElementTy();
 
-  auto funcTy = FunctionType::get({op.arraySize().getType()}, {op.getType()},
-                                  op.getContext());
+  auto funcTy = FunctionType::get(op.getContext(), {op.arraySize().getType()},
+                                  {op.getType()});
 
   p << op.getOperationName() << ' ' << op.arraySize() << " x " << elemTy;
   if (op.alignment().hasValue() && *op.alignment() != 0)
@@ -781,7 +781,7 @@ static void printCallOp(OpAsmPrinter &p, CallOp &op) {
 
   // Reconstruct the function MLIR function type from operand and result types.
   p << " : "
-    << FunctionType::get(args.getTypes(), op.getResultTypes(), op.getContext());
+    << FunctionType::get(op.getContext(), args.getTypes(), op.getResultTypes());
 }
 
 // <operation> ::= `llvm.call` (function-id | ssa-use) `(` ssa-use-list `)`
@@ -1597,7 +1597,7 @@ Block *LLVMFuncOp::addEntryBlock() {
 void LLVMFuncOp::build(OpBuilder &builder, OperationState &result,
                        StringRef name, LLVMType type, LLVM::Linkage linkage,
                        ArrayRef<NamedAttribute> attrs,
-                       ArrayRef<MutableDictionaryAttr> argAttrs) {
+                       ArrayRef<DictionaryAttr> argAttrs) {
   result.addRegion();
   result.addAttribute(SymbolTable::getSymbolAttrName(),
                       builder.getStringAttr(name));
@@ -1613,7 +1613,7 @@ void LLVMFuncOp::build(OpBuilder &builder, OperationState &result,
          "expected as many argument attribute lists as arguments");
   SmallString<8> argAttrName;
   for (unsigned i = 0; i < numInputs; ++i)
-    if (auto argDict = argAttrs[i].getDictionary(builder.getContext()))
+    if (DictionaryAttr argDict = argAttrs[i])
       result.addAttribute(getArgAttrName(i, argAttrName), argDict);
 }
 
