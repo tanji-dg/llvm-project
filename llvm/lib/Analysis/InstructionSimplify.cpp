@@ -924,19 +924,19 @@ static Value *simplifyDivRem(Value *Op0, Value *Op1, bool IsDiv,
                              const SimplifyQuery &Q) {
   Type *Ty = Op0->getType();
 
-  // X / undef -> undef
-  // X % undef -> undef
+  // X / undef -> poison
+  // X % undef -> poison
   if (Q.isUndefValue(Op1))
-    return Op1;
+    return PoisonValue::get(Ty);
 
-  // X / 0 -> undef
-  // X % 0 -> undef
+  // X / 0 -> poison
+  // X % 0 -> poison
   // We don't need to preserve faults!
   if (match(Op1, m_Zero()))
-    return UndefValue::get(Ty);
+    return PoisonValue::get(Ty);
 
-  // If any element of a constant divisor fixed width vector is zero or undef,
-  // the whole op is undef.
+  // If any element of a constant divisor fixed width vector is zero or undef
+  // the behavior is undefined and we can fold the whole op to poison.
   auto *Op1C = dyn_cast<Constant>(Op1);
   auto *VTy = dyn_cast<FixedVectorType>(Ty);
   if (Op1C && VTy) {
@@ -944,7 +944,7 @@ static Value *simplifyDivRem(Value *Op0, Value *Op1, bool IsDiv,
     for (unsigned i = 0; i != NumElts; ++i) {
       Constant *Elt = Op1C->getAggregateElement(i);
       if (Elt && (Elt->isNullValue() || Q.isUndefValue(Elt)))
-        return UndefValue::get(Ty);
+        return PoisonValue::get(Ty);
     }
   }
 
@@ -5444,19 +5444,19 @@ static Value *simplifyBinaryIntrinsic(Function *F, Value *Op0, Value *Op1,
   case Intrinsic::usub_with_overflow:
   case Intrinsic::ssub_with_overflow:
     // X - X -> { 0, false }
-    if (Op0 == Op1)
+    // X - undef -> { 0, false }
+    // undef - X -> { 0, false }
+    if (Op0 == Op1 || Q.isUndefValue(Op0) || Q.isUndefValue(Op1))
       return Constant::getNullValue(ReturnType);
-    LLVM_FALLTHROUGH;
+    break;
   case Intrinsic::uadd_with_overflow:
   case Intrinsic::sadd_with_overflow:
-    // X - undef -> { undef, false }
-    // undef - X -> { undef, false }
-    // X + undef -> { undef, false }
-    // undef + x -> { undef, false }
+    // X + undef -> { -1, false }
+    // undef + x -> { -1, false }
     if (Q.isUndefValue(Op0) || Q.isUndefValue(Op1)) {
       return ConstantStruct::get(
           cast<StructType>(ReturnType),
-          {UndefValue::get(ReturnType->getStructElementType(0)),
+          {Constant::getAllOnesValue(ReturnType->getStructElementType(0)),
            Constant::getNullValue(ReturnType->getStructElementType(1))});
     }
     break;
