@@ -772,7 +772,7 @@ public:
   /// effectively impossible for the backend to undo.
   /// TODO: If load combining is allowed in the IR optimizer, this analysis
   ///       may not be necessary.
-  bool isLoadCombineReductionCandidate(unsigned ReductionOpcode) const;
+  bool isLoadCombineReductionCandidate(RecurKind RdxKind) const;
 
   /// Assume that a vector of stores of bitwise-or/shifted/zexted loaded values
   /// can be load combined in the backend. Load combining may not be allowed in
@@ -3384,8 +3384,7 @@ bool BoUpSLP::canReuseExtract(ArrayRef<Value *> VL, Value *OpValue,
 }
 
 bool BoUpSLP::areAllUsersVectorized(Instruction *I) const {
-  return I->hasOneUse() ||
-         std::all_of(I->user_begin(), I->user_end(), [this](User *U) {
+  return I->hasOneUse() || llvm::all_of(I->users(), [this](User *U) {
            return ScalarToTreeEntry.count(U) > 0;
          });
 }
@@ -3897,8 +3896,8 @@ static bool isLoadCombineCandidateImpl(Value *Root, unsigned NumElts,
   return true;
 }
 
-bool BoUpSLP::isLoadCombineReductionCandidate(unsigned RdxOpcode) const {
-  if (RdxOpcode != Instruction::Or)
+bool BoUpSLP::isLoadCombineReductionCandidate(RecurKind RdxKind) const {
+  if (RdxKind != RecurKind::Or)
     return false;
 
   unsigned NumElts = VectorizableTree[0]->Scalars.size();
@@ -4168,11 +4167,10 @@ void BoUpSLP::setInsertPointAfterBundle(TreeEntry *E) {
   // should be in this block.
   auto *Front = E->getMainOp();
   auto *BB = Front->getParent();
-  assert(llvm::all_of(make_range(E->Scalars.begin(), E->Scalars.end()),
-                      [=](Value *V) -> bool {
-                        auto *I = cast<Instruction>(V);
-                        return !E->isOpcodeOrAlt(I) || I->getParent() == BB;
-                      }));
+  assert(llvm::all_of(E->Scalars, [=](Value *V) -> bool {
+    auto *I = cast<Instruction>(V);
+    return !E->isOpcodeOrAlt(I) || I->getParent() == BB;
+  }));
 
   // The last instruction in the bundle in program order.
   Instruction *LastInst = nullptr;
@@ -4262,18 +4260,13 @@ Value *BoUpSLP::vectorizeTree(ArrayRef<Value *> VL) {
       if (E->isSame(VL)) {
         Value *V = vectorizeTree(E);
         if (VL.size() == E->Scalars.size() && !E->ReuseShuffleIndices.empty()) {
-          // We need to get the vectorized value but without shuffle.
-          if (auto *SV = dyn_cast<ShuffleVectorInst>(V)) {
-            V = SV->getOperand(0);
-          } else {
-            // Reshuffle to get only unique values.
-            SmallVector<int, 4> UniqueIdxs;
-            SmallSet<int, 4> UsedIdxs;
-            for (int Idx : E->ReuseShuffleIndices)
-              if (UsedIdxs.insert(Idx).second)
-                UniqueIdxs.emplace_back(Idx);
-            V = Builder.CreateShuffleVector(V, UniqueIdxs);
-          }
+          // Reshuffle to get only unique values.
+          SmallVector<int, 4> UniqueIdxs;
+          SmallSet<int, 4> UsedIdxs;
+          for (int Idx : E->ReuseShuffleIndices)
+            if (UsedIdxs.insert(Idx).second)
+              UniqueIdxs.emplace_back(Idx);
+          V = Builder.CreateShuffleVector(V, UniqueIdxs, "shrink.shuffle");
         }
         return V;
       }
@@ -6994,7 +6987,7 @@ public:
       }
       if (V.isTreeTinyAndNotFullyVectorizable())
         break;
-      if (V.isLoadCombineReductionCandidate(RdxTreeInst.getOpcode()))
+      if (V.isLoadCombineReductionCandidate(RdxTreeInst.getKind()))
         break;
 
       V.computeMinimumValueSizes();
