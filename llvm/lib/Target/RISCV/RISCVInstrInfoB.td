@@ -46,19 +46,6 @@ def shfl_uimm : Operand<XLenVT>, ImmLeaf<XLenVT, [{
 }
 
 
-// Convert rotl immediate to a rotr immediate for XLen instructions.
-def ImmROTL2R : SDNodeXForm<imm, [{
-  uint64_t XLen = Subtarget->getXLen();
-  return CurDAG->getTargetConstant(XLen - N->getZExtValue(), SDLoc(N),
-                                   N->getValueType(0));
-}]>;
-
-// Convert rotl immediate to a rotr immediate for W instructions.
-def ImmROTL2RW : SDNodeXForm<imm, [{
-  return CurDAG->getTargetConstant(32 - N->getZExtValue(), SDLoc(N),
-                                   N->getValueType(0));
-}]>;
-
 // Check that it is a SLOI (Shift Left Ones Immediate).
 def SLOIPat : PatFrag<(ops node:$A, node:$B),
                       (or (shl node:$A, node:$B), imm), [{
@@ -75,13 +62,6 @@ def SROIPat : PatFrag<(ops node:$A, node:$B),
 def SROIWPat : PatFrag<(ops node:$A, node:$B),
                        (or (srl node:$A, node:$B), imm), [{
   return MatchSROIW(N);
-}]>;
-
-// Check that it is a SLLIUW (Shift Logical Left Immediate Unsigned i32
-// on RV64).
-def SLLIUWPat : PatFrag<(ops node:$A, node:$B),
-                        (and (shl node:$A, node:$B), imm), [{
-  return MatchSLLIUW(N);
 }]>;
 
 // Checks if this mask has a single 0 bit and cannot be used with ANDI.
@@ -108,18 +88,6 @@ def BSETINVXForm : SDNodeXForm<imm, [{
   // Find the lowest 1.
   return CurDAG->getTargetConstant(N->getAPIntValue().countTrailingZeros(),
                                    SDLoc(N), N->getValueType(0));
-}]>;
-
-// Similar to above, but makes sure the immediate has 33 sign bits. When used
-// with an AND/OR/XOR where the other operand has at least 33 sign bits, the
-// result will have 33 sign bits. This can match BCLRIW/BSETIW/BINVIW.
-def BCLRWMask : ImmLeaf<i64, [{
-  // After checking the sign bits, truncate to 32 bits for power of 2 check.
-  return isInt<32>(Imm) && !isInt<12>(Imm) && isPowerOf2_32(~Imm);
-}]>;
-
-def BSETINVWMask : ImmLeaf<i64, [{
-  return isInt<32>(Imm) && !isInt<12>(Imm) && isPowerOf2_32(Imm);
 }]>;
 
 //===----------------------------------------------------------------------===//
@@ -400,6 +368,8 @@ def RORW  : ALUW_rr<0b0110000, 0b101, "rorw">, Sched<[]>;
 } // Predicates = [HasStdExtZbbOrZbp, IsRV64]
 
 let Predicates = [HasStdExtZbs, IsRV64] in {
+// NOTE: These instructions have been removed from the 0.94 spec. As a result
+// we have no isel patterns for them.
 def BCLRW : ALUW_rr<0b0100100, 0b001, "bclrw">, Sched<[]>;
 def BSETW : ALUW_rr<0b0010100, 0b001, "bsetw">, Sched<[]>;
 def BINVW : ALUW_rr<0b0110100, 0b001, "binvw">, Sched<[]>;
@@ -424,6 +394,8 @@ let Predicates = [HasStdExtZbbOrZbp, IsRV64] in
 def RORIW : RVBShiftW_ri<0b0110000, 0b101, OPC_OP_IMM_32, "roriw">, Sched<[]>;
 
 let Predicates = [HasStdExtZbs, IsRV64] in {
+// NOTE: These instructions have been removed from the 0.94 spec. As a result
+// we have no isel patterns for them.
 def BCLRIW : RVBShiftW_ri<0b0100100, 0b001, OPC_OP_IMM_32, "bclriw">,
               Sched<[]>;
 def BSETIW : RVBShiftW_ri<0b0010100, 0b001, OPC_OP_IMM_32, "bsetiw">,
@@ -743,7 +715,7 @@ let Predicates = [HasStdExtZbbOrZbp] in {
 def : Pat<(rotr GPR:$rs1, uimmlog2xlen:$shamt),
           (RORI GPR:$rs1, uimmlog2xlen:$shamt)>;
 def : Pat<(rotl GPR:$rs1, uimmlog2xlen:$shamt),
-          (RORI GPR:$rs1, (ImmROTL2R uimmlog2xlen:$shamt))>;
+          (RORI GPR:$rs1, (ImmSubFromXLen uimmlog2xlen:$shamt))>;
 }
 
 def riscv_grevi    : SDNode<"RISCVISD::GREVI", SDTIntBinOp, []>;
@@ -829,7 +801,7 @@ def : Pat<(fshr GPR:$rs3, GPR:$rs1, uimmlog2xlen:$shamt),
 // We can use FSRI for fshl by immediate if we subtract the immediate from
 // XLen and swap the operands.
 def : Pat<(fshl GPR:$rs3, GPR:$rs1, uimmlog2xlen:$shamt),
-          (FSRI GPR:$rs1, GPR:$rs3, (ImmROTL2R uimmlog2xlen:$shamt))>;
+          (FSRI GPR:$rs1, GPR:$rs3, (ImmSubFromXLen uimmlog2xlen:$shamt))>;
 } // Predicates = [HasStdExtZbt]
 
 let Predicates = [HasStdExtZbb] in {
@@ -971,36 +943,8 @@ def : Pat<(riscv_rorw GPR:$rs1, GPR:$rs2),
 def : Pat<(riscv_rorw GPR:$rs1, uimm5:$rs2),
           (RORIW GPR:$rs1, uimm5:$rs2)>;
 def : Pat<(riscv_rolw GPR:$rs1, uimm5:$rs2),
-          (RORIW GPR:$rs1, (ImmROTL2RW uimm5:$rs2))>;
+          (RORIW GPR:$rs1, (ImmSubFrom32 uimm5:$rs2))>;
 } // Predicates = [HasStdExtZbbOrZbp, IsRV64]
-
-let Predicates = [HasStdExtZbs, IsRV64] in {
-def : Pat<(and (not (riscv_sllw 1, GPR:$rs2)), (assertsexti32 GPR:$rs1)),
-          (BCLRW GPR:$rs1, GPR:$rs2)>;
-def : Pat<(sext_inreg (and (not (riscv_sllw 1, GPR:$rs2)), GPR:$rs1), i32),
-          (BCLRW GPR:$rs1, GPR:$rs2)>;
-def : Pat<(or (riscv_sllw 1, GPR:$rs2), (assertsexti32 GPR:$rs1)),
-          (BSETW GPR:$rs1, GPR:$rs2)>;
-def : Pat<(sext_inreg (or (riscv_sllw 1, GPR:$rs2), GPR:$rs1), i32),
-          (BSETW GPR:$rs1, GPR:$rs2)>;
-def : Pat<(xor (riscv_sllw 1, GPR:$rs2), (assertsexti32 GPR:$rs1)),
-          (BINVW GPR:$rs1, GPR:$rs2)>;
-def : Pat<(sext_inreg (xor (riscv_sllw 1, GPR:$rs2), GPR:$rs1), i32),
-          (BINVW GPR:$rs1, GPR:$rs2)>;
-def : Pat<(and (riscv_srlw GPR:$rs1, GPR:$rs2), 1),
-          (BEXTW GPR:$rs1, GPR:$rs2)>;
-
-def : Pat<(riscv_sllw 1, GPR:$rs2),
-          (BSETW X0, GPR:$rs2)>;
-
-def : Pat<(and (assertsexti32 GPR:$rs1), BCLRWMask:$mask),
-          (BCLRIW GPR:$rs1, (BCLRXForm imm:$mask))>;
-def : Pat<(or (assertsexti32 GPR:$rs1), BSETINVWMask:$mask),
-          (BSETIW GPR:$rs1, (BSETINVXForm imm:$mask))>;
-def : Pat<(xor (assertsexti32 GPR:$rs1), BSETINVWMask:$mask),
-          (BINVIW GPR:$rs1, (BSETINVXForm imm:$mask))>;
-
-} // Predicates = [HasStdExtZbs, IsRV64]
 
 let Predicates = [HasStdExtZbp, IsRV64] in {
 def : Pat<(sext_inreg (SLOIPat GPR:$rs1, uimm5:$shamt), i32),
@@ -1024,7 +968,7 @@ def : Pat<(riscv_fsrw GPR:$rs3, GPR:$rs1, GPR:$rs2),
 def : Pat<(riscv_fsrw GPR:$rs3, GPR:$rs1, uimm5:$shamt),
           (FSRIW GPR:$rs1, GPR:$rs3, uimm5:$shamt)>;
 def : Pat<(riscv_fslw GPR:$rs3, GPR:$rs1, uimm5:$shamt),
-          (FSRIW GPR:$rs1, GPR:$rs3, (ImmROTL2RW uimm5:$shamt))>;
+          (FSRIW GPR:$rs1, GPR:$rs3, (ImmSubFrom32 uimm5:$shamt))>;
 } // Predicates = [HasStdExtZbt, IsRV64]
 
 let Predicates = [HasStdExtZbb, IsRV64] in {
