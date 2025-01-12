@@ -5,20 +5,24 @@ set(LLVM_LINK_COMPONENTS
   native
   )
 
-add_llvm_tool(mlir-cpu-runner
+add_mlir_tool(mlir-cpu-runner
   mlir-cpu-runner.cpp
+
+  EXPORT_SYMBOLS
   )
 llvm_update_compile_flags(mlir-cpu-runner)
-get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
-target_link_libraries(mlir-cpu-runner PRIVATE
-  ${dialect_libs}
+mlir_target_link_libraries(mlir-cpu-runner PRIVATE
   MLIRAnalysis
-  MLIREDSC
-  MLIRExecutionEngine
+  MLIRBuiltinToLLVMIRTranslation
   MLIRIR
-  MLIRJitRunner
-  MLIRLLVMIR
+  MLIRLLVMDialect
+  MLIRLLVMToLLVMIRTranslation
+  MLIRToLLVMIRTranslationRegistration
   MLIRParser
-  MLIRTargetLLVMIR
+  MLIRTargetLLVMIRExport
   MLIRSupport
+  )
+target_link_libraries(mlir-cpu-runner PRIVATE
+  MLIRExecutionEngine
+  MLIRJitRunner
   )

@@ -7,54 +7,58 @@
 //===----------------------------------------------------------------------===//
 //
 // This file implements a pass to convert gpu launch function into a vulkan
-// launch function. Creates a SPIR-V binary shader from the `spirv::ModuleOp`
-// using `spirv::serialize` function, attaches binary data and entry point name
-// as an attributes to vulkan launch call op.
+// launch function. Extracts the SPIR-V from a `gpu::BinaryOp` and attaches it
+// along with the entry point name as attributes to a Vulkan launch call op.
 //
 //===----------------------------------------------------------------------===//
 
-#include "../PassDetail.h"
 #include "mlir/Conversion/GPUToVulkan/ConvertGPUToVulkanPass.h"
-#include "mlir/Dialect/GPU/GPUDialect.h"
+
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/SPIRV/IR/SPIRVDialect.h"
 #include "mlir/Dialect/SPIRV/IR/SPIRVOps.h"
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/Target/SPIRV/Serialization.h"
+
+namespace mlir {
+#define GEN_PASS_DEF_CONVERTGPULAUNCHFUNCTOVULKANLAUNCHFUNC
+#include "mlir/Conversion/Passes.h.inc"
+} // namespace mlir
 
 using namespace mlir;
 
 static constexpr const char *kSPIRVBlobAttrName = "spirv_blob";
 static constexpr const char *kSPIRVEntryPointAttrName = "spirv_entry_point";
+static constexpr const char *kSPIRVElementTypesAttrName = "spirv_element_types";
 static constexpr const char *kVulkanLaunch = "vulkanLaunch";
 
 namespace {
 
-/// A pass to convert gpu launch op to vulkan launch call op, by creating a
-/// SPIR-V binary shader from `spirv::ModuleOp` using `spirv::serialize`
-/// function and attaching binary data and entry point name as an attributes to
-/// created vulkan launch call op.
+/// A pass to convert gpu launch op to vulkan launch call op, by extracting a
+/// SPIR-V binary shader from a `gpu::BinaryOp` and attaching binary data and
+/// entry point name as an attributes to created vulkan launch call op.
 class ConvertGpuLaunchFuncToVulkanLaunchFunc
-    : public ConvertGpuLaunchFuncToVulkanLaunchFuncBase<
+    : public impl::ConvertGpuLaunchFuncToVulkanLaunchFuncBase<
           ConvertGpuLaunchFuncToVulkanLaunchFunc> {
 public:
   void runOnOperation() override;
 
 private:
-  /// Creates a SPIR-V binary shader from the given `module` using
-  /// `spirv::serialize` function.
-  LogicalResult createBinaryShader(ModuleOp module,
-                                   std::vector<char> &binaryShader);
+  /// Extracts a SPIR-V binary shader from the given `module`, if any.
+  /// Note that this also removes the binary from the IR.
+  FailureOr<StringAttr> getBinaryShader(ModuleOp module);
 
   /// Converts the given `launchOp` to vulkan launch call.
   void convertGpuLaunchFunc(gpu::LaunchFuncOp launchOp);
 
   /// Checks where the given type is supported by Vulkan runtime.
   bool isSupportedType(Type type) {
-    if (auto memRefType = type.dyn_cast_or_null<MemRefType>()) {
+    if (auto memRefType = dyn_cast_or_null<MemRefType>(type)) {
       auto elementType = memRefType.getElementType();
       return memRefType.hasRank() &&
              (memRefType.getRank() >= 1 && memRefType.getRank() <= 3) &&
@@ -74,7 +78,7 @@ private:
   static constexpr unsigned kVulkanLaunchNumConfigOperands = 3;
 };
 
-} // anonymous namespace
+} // namespace
 
 void ConvertGpuLaunchFuncToVulkanLaunchFunc::runOnOperation() {
   bool done = false;
@@ -99,7 +103,7 @@ void ConvertGpuLaunchFuncToVulkanLaunchFunc::runOnOperation() {
 
 LogicalResult ConvertGpuLaunchFuncToVulkanLaunchFunc::declareVulkanLaunchFunc(
     Location loc, gpu::LaunchFuncOp launchOp) {
-  OpBuilder builder(getOperation().getBody()->getTerminator());
+  auto builder = OpBuilder::atBlockEnd(getOperation().getBody());
 
   // Workgroup size is written into the kernel. So to properly modelling
   // vulkan launch, we have to skip local workgroup size configuration here.
@@ -123,27 +127,40 @@ LogicalResult ConvertGpuLaunchFuncToVulkanLaunchFunc::declareVulkanLaunchFunc(
 
   // Declare vulkan launch function.
   auto funcType = builder.getFunctionType(vulkanLaunchTypes, {});
-  builder.create<FuncOp>(loc, kVulkanLaunch, funcType).setPrivate();
+  builder.create<func::FuncOp>(loc, kVulkanLaunch, funcType).setPrivate();
 
   return success();
 }
 
-LogicalResult ConvertGpuLaunchFuncToVulkanLaunchFunc::createBinaryShader(
-    ModuleOp module, std::vector<char> &binaryShader) {
+FailureOr<StringAttr>
+ConvertGpuLaunchFuncToVulkanLaunchFunc::getBinaryShader(ModuleOp module) {
   bool done = false;
-  SmallVector<uint32_t, 0> binary;
-  for (auto spirvModule : module.getOps<spirv::ModuleOp>()) {
+  StringAttr binaryAttr;
+  gpu::BinaryOp binaryToErase;
+  for (auto gpuBinary : module.getOps<gpu::BinaryOp>()) {
     if (done)
-      return spirvModule.emitError("should only contain one 'spv.module' op");
+      return gpuBinary.emitError("should only contain one 'gpu.binary' op");
     done = true;
 
-    if (failed(spirv::serialize(spirvModule, binary)))
-      return failure();
+    ArrayRef<Attribute> objects = gpuBinary.getObjectsAttr().getValue();
+    if (objects.size() != 1)
+      return gpuBinary.emitError("should only contain a single object");
+
+    auto object = cast<gpu::ObjectAttr>(objects[0]);
+
+    if (!isa<spirv::TargetEnvAttr>(object.getTarget()))
+      return gpuBinary.emitError(
+          "should contain an object with a SPIR-V target environment");
+
+    binaryAttr = object.getObject();
+    binaryToErase = gpuBinary;
   }
-  binaryShader.resize(binary.size() * sizeof(uint32_t));
-  std::memcpy(binaryShader.data(), reinterpret_cast<char *>(binary.data()),
-              binaryShader.size());
-  return success();
+  if (!done)
+    return module.emitError("should contain a 'gpu.binary' op");
+
+  // Remove the binary to avoid confusing later conversion passes.
+  binaryToErase.erase();
+  return binaryAttr;
 }
 
 void ConvertGpuLaunchFuncToVulkanLaunchFunc::convertGpuLaunchFunc(
@@ -152,9 +169,9 @@ void ConvertGpuLaunchFuncToVulkanLaunchFunc::convertGpuLaunchFunc(
   OpBuilder builder(launchOp);
   Location loc = launchOp.getLoc();
 
-  // Serialize `spirv::Module` into binary form.
-  std::vector<char> binary;
-  if (failed(createBinaryShader(module, binary)))
+  FailureOr<StringAttr> binaryAttr = getBinaryShader(module);
+  // Extract SPIR-V from `gpu.binary` op.
+  if (failed(binaryAttr))
     return signalPassFailure();
 
   // Declare vulkan launch function.
@@ -170,19 +187,28 @@ void ConvertGpuLaunchFuncToVulkanLaunchFunc::convertGpuLaunchFunc(
                               gpuLaunchOperands.end());
 
   // Create vulkan launch call op.
-  auto vulkanLaunchCallOp = builder.create<CallOp>(
-      loc, TypeRange{}, builder.getSymbolRefAttr(kVulkanLaunch),
+  auto vulkanLaunchCallOp = builder.create<func::CallOp>(
+      loc, TypeRange{}, SymbolRefAttr::get(builder.getContext(), kVulkanLaunch),
       vulkanLaunchOperands);
 
   // Set SPIR-V binary shader data as an attribute.
-  vulkanLaunchCallOp->setAttr(
-      kSPIRVBlobAttrName,
-      StringAttr::get({binary.data(), binary.size()}, loc->getContext()));
+  vulkanLaunchCallOp->setAttr(kSPIRVBlobAttrName, *binaryAttr);
 
   // Set entry point name as an attribute.
-  vulkanLaunchCallOp->setAttr(
-      kSPIRVEntryPointAttrName,
-      StringAttr::get(launchOp.getKernelName(), loc->getContext()));
+  vulkanLaunchCallOp->setAttr(kSPIRVEntryPointAttrName,
+                              launchOp.getKernelName());
+
+  // Add MemRef element types before they're lost when lowering to LLVM.
+  SmallVector<Type> elementTypes;
+  for (Type type : llvm::drop_begin(launchOp.getOperandTypes(),
+                                    gpu::LaunchOp::kNumConfigOperands)) {
+    // The below cast always succeeds as it has already been verified in
+    // 'declareVulkanLaunchFunc' that these are MemRefs with compatible element
+    // types.
+    elementTypes.push_back(cast<MemRefType>(type).getElementType());
+  }
+  vulkanLaunchCallOp->setAttr(kSPIRVElementTypesAttrName,
+                              builder.getTypeArrayAttr(elementTypes));
 
   launchOp.erase();
 }

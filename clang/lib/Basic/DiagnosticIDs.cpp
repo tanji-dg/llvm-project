@@ -17,7 +17,9 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Path.h"
 #include <map>
+#include <optional>
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
@@ -33,7 +35,7 @@ struct StaticDiagInfoRec;
 // platforms. See "How To Write Shared Libraries" by Ulrich Drepper.
 struct StaticDiagInfoDescriptionStringTable {
 #define DIAG(ENUM, CLASS, DEFAULT_SEVERITY, DESC, GROUP, SFINAE, NOWERROR,     \
-             SHOWINSYSHEADER, DEFERRABLE, CATEGORY)                            \
+             SHOWINSYSHEADER, SHOWINSYSMACRO, DEFERRABLE, CATEGORY)            \
   char ENUM##_desc[sizeof(DESC)];
   // clang-format off
 #include "clang/Basic/DiagnosticCommonKinds.inc"
@@ -48,13 +50,14 @@ struct StaticDiagInfoDescriptionStringTable {
 #include "clang/Basic/DiagnosticSemaKinds.inc"
 #include "clang/Basic/DiagnosticAnalysisKinds.inc"
 #include "clang/Basic/DiagnosticRefactoringKinds.inc"
+#include "clang/Basic/DiagnosticInstallAPIKinds.inc"
   // clang-format on
 #undef DIAG
 };
 
 const StaticDiagInfoDescriptionStringTable StaticDiagInfoDescriptions = {
 #define DIAG(ENUM, CLASS, DEFAULT_SEVERITY, DESC, GROUP, SFINAE, NOWERROR,     \
-             SHOWINSYSHEADER, DEFERRABLE, CATEGORY)                            \
+             SHOWINSYSHEADER, SHOWINSYSMACRO, DEFERRABLE, CATEGORY)            \
   DESC,
 // clang-format off
 #include "clang/Basic/DiagnosticCommonKinds.inc"
@@ -69,7 +72,8 @@ const StaticDiagInfoDescriptionStringTable StaticDiagInfoDescriptions = {
 #include "clang/Basic/DiagnosticSemaKinds.inc"
 #include "clang/Basic/DiagnosticAnalysisKinds.inc"
 #include "clang/Basic/DiagnosticRefactoringKinds.inc"
-  // clang-format on
+#include "clang/Basic/DiagnosticInstallAPIKinds.inc"
+// clang-format on
 #undef DIAG
 };
 
@@ -79,7 +83,7 @@ extern const StaticDiagInfoRec StaticDiagInfo[];
 // StaticDiagInfoRec would have extra padding on 64-bit platforms.
 const uint32_t StaticDiagInfoDescriptionOffsets[] = {
 #define DIAG(ENUM, CLASS, DEFAULT_SEVERITY, DESC, GROUP, SFINAE, NOWERROR,     \
-             SHOWINSYSHEADER, DEFERRABLE, CATEGORY)                            \
+             SHOWINSYSHEADER, SHOWINSYSMACRO, DEFERRABLE, CATEGORY)            \
   offsetof(StaticDiagInfoDescriptionStringTable, ENUM##_desc),
 // clang-format off
 #include "clang/Basic/DiagnosticCommonKinds.inc"
@@ -94,12 +98,13 @@ const uint32_t StaticDiagInfoDescriptionOffsets[] = {
 #include "clang/Basic/DiagnosticSemaKinds.inc"
 #include "clang/Basic/DiagnosticAnalysisKinds.inc"
 #include "clang/Basic/DiagnosticRefactoringKinds.inc"
-  // clang-format on
+#include "clang/Basic/DiagnosticInstallAPIKinds.inc"
+// clang-format on
 #undef DIAG
 };
 
 // Diagnostic classes.
-enum {
+enum DiagnosticClass {
   CLASS_NOTE       = 0x01,
   CLASS_REMARK     = 0x02,
   CLASS_WARNING    = 0x03,
@@ -109,15 +114,23 @@ enum {
 
 struct StaticDiagInfoRec {
   uint16_t DiagID;
-  unsigned DefaultSeverity : 3;
-  unsigned Class : 3;
-  unsigned SFINAE : 2;
-  unsigned WarnNoWerror : 1;
-  unsigned WarnShowInSystemHeader : 1;
-  unsigned Deferrable : 1;
-  unsigned Category : 6;
+  LLVM_PREFERRED_TYPE(diag::Severity)
+  uint8_t DefaultSeverity : 3;
+  LLVM_PREFERRED_TYPE(DiagnosticClass)
+  uint8_t Class : 3;
+  LLVM_PREFERRED_TYPE(DiagnosticIDs::SFINAEResponse)
+  uint8_t SFINAE : 2;
+  uint8_t Category : 6;
+  LLVM_PREFERRED_TYPE(bool)
+  uint8_t WarnNoWerror : 1;
+  LLVM_PREFERRED_TYPE(bool)
+  uint8_t WarnShowInSystemHeader : 1;
+  LLVM_PREFERRED_TYPE(bool)
+  uint8_t WarnShowInSystemMacro : 1;
 
-  uint16_t OptionGroupIndex;
+  uint16_t OptionGroupIndex : 15;
+  LLVM_PREFERRED_TYPE(bool)
+  uint16_t Deferrable : 1;
 
   uint16_t DescriptionLen;
 
@@ -164,24 +177,26 @@ VALIDATE_DIAG_SIZE(CROSSTU)
 VALIDATE_DIAG_SIZE(SEMA)
 VALIDATE_DIAG_SIZE(ANALYSIS)
 VALIDATE_DIAG_SIZE(REFACTORING)
+VALIDATE_DIAG_SIZE(INSTALLAPI)
 #undef VALIDATE_DIAG_SIZE
 #undef STRINGIFY_NAME
 
 const StaticDiagInfoRec StaticDiagInfo[] = {
+// clang-format off
 #define DIAG(ENUM, CLASS, DEFAULT_SEVERITY, DESC, GROUP, SFINAE, NOWERROR,     \
-             SHOWINSYSHEADER, DEFERRABLE, CATEGORY)                         \
+             SHOWINSYSHEADER, SHOWINSYSMACRO, DEFERRABLE, CATEGORY)            \
   {                                                                            \
       diag::ENUM,                                                              \
       DEFAULT_SEVERITY,                                                        \
       CLASS,                                                                   \
       DiagnosticIDs::SFINAE,                                                   \
+      CATEGORY,                                                                \
       NOWERROR,                                                                \
       SHOWINSYSHEADER,                                                         \
-	  DEFERRABLE,                                                          \
-      CATEGORY,                                                                \
+      SHOWINSYSMACRO,                                                          \
       GROUP,                                                                   \
+	    DEFERRABLE,                                                              \
       STR_SIZE(DESC, uint16_t)},
-// clang-format off
 #include "clang/Basic/DiagnosticCommonKinds.inc"
 #include "clang/Basic/DiagnosticDriverKinds.inc"
 #include "clang/Basic/DiagnosticFrontendKinds.inc"
@@ -194,13 +209,14 @@ const StaticDiagInfoRec StaticDiagInfo[] = {
 #include "clang/Basic/DiagnosticSemaKinds.inc"
 #include "clang/Basic/DiagnosticAnalysisKinds.inc"
 #include "clang/Basic/DiagnosticRefactoringKinds.inc"
-  // clang-format on
+#include "clang/Basic/DiagnosticInstallAPIKinds.inc"
+// clang-format on
 #undef DIAG
 };
 
 } // namespace
 
-static const unsigned StaticDiagInfoSize = llvm::array_lengthof(StaticDiagInfo);
+static const unsigned StaticDiagInfoSize = std::size(StaticDiagInfo);
 
 /// GetDiagInfo - Return the StaticDiagInfoRec entry for the specified DiagID,
 /// or null if the ID is invalid.
@@ -236,6 +252,7 @@ CATEGORY(CROSSTU, COMMENT)
 CATEGORY(SEMA, CROSSTU)
 CATEGORY(ANALYSIS, SEMA)
 CATEGORY(REFACTORING, ANALYSIS)
+CATEGORY(INSTALLAPI, REFACTORING)
 #undef CATEGORY
 
   // Avoid out of bounds reads.
@@ -253,7 +270,7 @@ CATEGORY(REFACTORING, ANALYSIS)
   return Found;
 }
 
-static DiagnosticMapping GetDefaultDiagMapping(unsigned DiagID) {
+DiagnosticMapping DiagnosticIDs::getDefaultMapping(unsigned DiagID) {
   DiagnosticMapping Info = DiagnosticMapping::Make(
       diag::Severity::Fatal, /*IsUser=*/false, /*IsPragma=*/false);
 
@@ -290,21 +307,6 @@ namespace {
   };
 }
 
-// Unfortunately, the split between DiagnosticIDs and Diagnostic is not
-// particularly clean, but for now we just implement this method here so we can
-// access GetDefaultDiagMapping.
-DiagnosticMapping &
-DiagnosticsEngine::DiagState::getOrAddMapping(diag::kind Diag) {
-  std::pair<iterator, bool> Result =
-      DiagMap.insert(std::make_pair(Diag, DiagnosticMapping()));
-
-  // Initialize the entry if we added it.
-  if (Result.second)
-    Result.first->second = GetDefaultDiagMapping(Diag);
-
-  return Result.first->second;
-}
-
 static const StaticDiagCategoryRec CategoryNameTable[] = {
 #define GET_CATEGORY_TABLE
 #define CATEGORY(X, ENUM) { X, STR_SIZE(X, uint8_t) },
@@ -315,7 +317,7 @@ static const StaticDiagCategoryRec CategoryNameTable[] = {
 
 /// getNumberOfCategories - Return the number of categories
 unsigned DiagnosticIDs::getNumberOfCategories() {
-  return llvm::array_lengthof(CategoryNameTable) - 1;
+  return std::size(CategoryNameTable) - 1;
 }
 
 /// getCategoryNameFromID - Given a category ID, return the name of the
@@ -446,7 +448,7 @@ bool DiagnosticIDs::isBuiltinExtensionDiag(unsigned DiagID,
     return false;
 
   EnabledByDefault =
-      GetDefaultDiagMapping(DiagID).getSeverity() != diag::Severity::Ignored;
+      getDefaultMapping(DiagID).getSeverity() != diag::Severity::Ignored;
   return true;
 }
 
@@ -454,7 +456,7 @@ bool DiagnosticIDs::isDefaultMappingAsError(unsigned DiagID) {
   if (DiagID >= diag::DIAG_UPPER_LIMIT)
     return false;
 
-  return GetDefaultDiagMapping(DiagID).getSeverity() >= diag::Severity::Error;
+  return getDefaultMapping(DiagID).getSeverity() >= diag::Severity::Error;
 }
 
 /// getDescription - Given a diagnostic ID, return a description of the
@@ -544,7 +546,7 @@ DiagnosticIDs::getDiagnosticSeverity(unsigned DiagID, SourceLocation Loc,
   if (Result == diag::Severity::Ignored)
     return Result;
 
-  // Honor -w: this disables all messages which which are not Error/Fatal by
+  // Honor -w: this disables all messages which are not Error/Fatal by
   // default (disregarding attempts to upgrade severity from Warning to Error),
   // as well as disabling all messages which are currently mapped to Warning
   // (whether by default or downgraded from Error via e.g. -Wno-error or #pragma
@@ -571,9 +573,15 @@ DiagnosticIDs::getDiagnosticSeverity(unsigned DiagID, SourceLocation Loc,
 
   // If explicitly requested, map fatal errors to errors.
   if (Result == diag::Severity::Fatal &&
-      Diag.CurDiagID != diag::fatal_too_many_errors && Diag.FatalsAsError)
+      DiagID != diag::fatal_too_many_errors && Diag.FatalsAsError)
     Result = diag::Severity::Error;
 
+  // Rest of the mappings are only applicable for diagnostics associated with a
+  // SourceLocation, bail out early for others.
+  if (!Diag.hasSourceManager())
+    return Result;
+
+  const auto &SM = Diag.getSourceManager();
   // Custom diagnostics always are emitted in system headers.
   bool ShowInSystemHeader =
       !GetDiagInfo(DiagID) || GetDiagInfo(DiagID)->WarnShowInSystemHeader;
@@ -582,8 +590,18 @@ DiagnosticIDs::getDiagnosticSeverity(unsigned DiagID, SourceLocation Loc,
   // because we also want to ignore extensions and warnings in -Werror and
   // -pedantic-errors modes, which *map* warnings/extensions to errors.
   if (State->SuppressSystemWarnings && !ShowInSystemHeader && Loc.isValid() &&
-      Diag.getSourceManager().isInSystemHeader(
-          Diag.getSourceManager().getExpansionLoc(Loc)))
+      SM.isInSystemHeader(SM.getExpansionLoc(Loc)))
+    return diag::Severity::Ignored;
+
+  // We also ignore warnings due to system macros
+  bool ShowInSystemMacro =
+      !GetDiagInfo(DiagID) || GetDiagInfo(DiagID)->WarnShowInSystemMacro;
+  if (State->SuppressSystemWarnings && !ShowInSystemMacro && Loc.isValid() &&
+      SM.isInSystemMacro(Loc))
+    return diag::Severity::Ignored;
+
+  // Clang-diagnostics pragmas always take precedence over suppression mapping.
+  if (!Mapping.isPragma() && Diag.isSuppressedViaMapping(DiagID, Loc))
     return diag::Severity::Ignored;
 
   return Result;
@@ -598,6 +616,7 @@ namespace {
     uint16_t NameOffset;
     uint16_t Members;
     uint16_t SubGroups;
+    StringRef Documentation;
 
     // String is stored with a pascal-style length byte.
     StringRef getName() const {
@@ -609,22 +628,47 @@ namespace {
 
 // Second the table of options, sorted by name for fast binary lookup.
 static const WarningOption OptionTable[] = {
-#define GET_DIAG_TABLE
+#define DIAG_ENTRY(GroupName, FlagNameOffset, Members, SubGroups, Docs)        \
+  {FlagNameOffset, Members, SubGroups, Docs},
 #include "clang/Basic/DiagnosticGroups.inc"
-#undef GET_DIAG_TABLE
+#undef DIAG_ENTRY
 };
+
+/// Given a diagnostic group ID, return its documentation.
+StringRef DiagnosticIDs::getWarningOptionDocumentation(diag::Group Group) {
+  return OptionTable[static_cast<int>(Group)].Documentation;
+}
+
+StringRef DiagnosticIDs::getWarningOptionForGroup(diag::Group Group) {
+  return OptionTable[static_cast<int>(Group)].getName();
+}
+
+std::optional<diag::Group>
+DiagnosticIDs::getGroupForWarningOption(StringRef Name) {
+  const auto *Found = llvm::partition_point(
+      OptionTable, [=](const WarningOption &O) { return O.getName() < Name; });
+  if (Found == std::end(OptionTable) || Found->getName() != Name)
+    return std::nullopt;
+  return static_cast<diag::Group>(Found - OptionTable);
+}
+
+std::optional<diag::Group> DiagnosticIDs::getGroupForDiag(unsigned DiagID) {
+  if (const StaticDiagInfoRec *Info = GetDiagInfo(DiagID))
+    return static_cast<diag::Group>(Info->getOptionGroupIndex());
+  return std::nullopt;
+}
 
 /// getWarningOptionForDiag - Return the lowest-level warning option that
 /// enables the specified diagnostic.  If there is no -Wfoo flag that controls
 /// the diagnostic, this returns null.
 StringRef DiagnosticIDs::getWarningOptionForDiag(unsigned DiagID) {
-  if (const StaticDiagInfoRec *Info = GetDiagInfo(DiagID))
-    return OptionTable[Info->getOptionGroupIndex()].getName();
+  if (auto G = getGroupForDiag(DiagID))
+    return getWarningOptionForGroup(*G);
   return StringRef();
 }
 
 std::vector<std::string> DiagnosticIDs::getDiagnosticFlags() {
-  std::vector<std::string> Res;
+  std::vector<std::string> Res{"-W", "-Wno-"};
   for (size_t I = 1; DiagGroupNames[I] != '\0';) {
     std::string Diag(DiagGroupNames + I + 1, DiagGroupNames[I]);
     I += DiagGroupNames[I] + 1;
@@ -668,12 +712,10 @@ static bool getDiagnosticsInGroup(diag::Flavor Flavor,
 bool
 DiagnosticIDs::getDiagnosticsInGroup(diag::Flavor Flavor, StringRef Group,
                                      SmallVectorImpl<diag::kind> &Diags) const {
-  auto Found = llvm::partition_point(
-      OptionTable, [=](const WarningOption &O) { return O.getName() < Group; });
-  if (Found == std::end(OptionTable) || Found->getName() != Group)
-    return true; // Option not found.
-
-  return ::getDiagnosticsInGroup(Flavor, Found, Diags);
+  if (std::optional<diag::Group> G = getGroupForWarningOption(Group))
+    return ::getDiagnosticsInGroup(
+        Flavor, &OptionTable[static_cast<unsigned>(*G)], Diags);
+  return true;
 }
 
 void DiagnosticIDs::getAllDiagnostics(diag::Flavor Flavor,
@@ -686,7 +728,7 @@ void DiagnosticIDs::getAllDiagnostics(diag::Flavor Flavor,
 StringRef DiagnosticIDs::getNearestOption(diag::Flavor Flavor,
                                           StringRef Group) {
   StringRef Best;
-  unsigned BestDistance = Group.size() + 1; // Sanity threshold.
+  unsigned BestDistance = Group.size() + 1; // Maximum threshold.
   for (const WarningOption &O : OptionTable) {
     // Don't suggest ignored warning flags.
     if (!O.Members && !O.SubGroups)
@@ -716,8 +758,9 @@ StringRef DiagnosticIDs::getNearestOption(diag::Flavor Flavor,
 
 /// ProcessDiag - This is the method used to report a diagnostic that is
 /// finally fully formed.
-bool DiagnosticIDs::ProcessDiag(DiagnosticsEngine &Diag) const {
-  Diagnostic Info(&Diag);
+bool DiagnosticIDs::ProcessDiag(DiagnosticsEngine &Diag,
+                                const DiagnosticBuilder &DiagBuilder) const {
+  Diagnostic Info(&Diag, DiagBuilder);
 
   assert(Diag.getClient() && "DiagnosticClient not set!");
 
@@ -783,22 +826,24 @@ bool DiagnosticIDs::ProcessDiag(DiagnosticsEngine &Diag) const {
     // stop a flood of bogus errors.
     if (Diag.ErrorLimit && Diag.NumErrors > Diag.ErrorLimit &&
         DiagLevel == DiagnosticIDs::Error) {
-      Diag.SetDelayedDiagnostic(diag::fatal_too_many_errors);
+      Diag.Report(diag::fatal_too_many_errors);
       return false;
     }
   }
 
   // Make sure we set FatalErrorOccurred to ensure that the notes from the
   // diagnostic that caused `fatal_too_many_errors` won't be emitted.
-  if (Diag.CurDiagID == diag::fatal_too_many_errors)
+  if (Info.getID() == diag::fatal_too_many_errors)
     Diag.FatalErrorOccurred = true;
   // Finally, report it.
-  EmitDiag(Diag, DiagLevel);
+  EmitDiag(Diag, DiagBuilder, DiagLevel);
   return true;
 }
 
-void DiagnosticIDs::EmitDiag(DiagnosticsEngine &Diag, Level DiagLevel) const {
-  Diagnostic Info(&Diag);
+void DiagnosticIDs::EmitDiag(DiagnosticsEngine &Diag,
+                             const DiagnosticBuilder &DiagBuilder,
+                             Level DiagLevel) const {
+  Diagnostic Info(&Diag, DiagBuilder);
   assert(DiagLevel != DiagnosticIDs::Ignored && "Cannot emit ignored diagnostics!");
 
   Diag.Client->HandleDiagnostic((DiagnosticsEngine::Level)DiagLevel, Info);
@@ -806,8 +851,6 @@ void DiagnosticIDs::EmitDiag(DiagnosticsEngine &Diag, Level DiagLevel) const {
     if (DiagLevel == DiagnosticIDs::Warning)
       ++Diag.NumWarnings;
   }
-
-  Diag.CurDiagID = ~0U;
 }
 
 bool DiagnosticIDs::isUnrecoverable(unsigned DiagID) const {
@@ -829,10 +872,18 @@ bool DiagnosticIDs::isUnrecoverable(unsigned DiagID) const {
   if (isARCDiagnostic(DiagID))
     return false;
 
+  if (isCodegenABICheckDiagnostic(DiagID))
+    return false;
+
   return true;
 }
 
 bool DiagnosticIDs::isARCDiagnostic(unsigned DiagID) {
   unsigned cat = getCategoryNumberForDiag(DiagID);
-  return DiagnosticIDs::getCategoryNameFromID(cat).startswith("ARC ");
+  return DiagnosticIDs::getCategoryNameFromID(cat).starts_with("ARC ");
+}
+
+bool DiagnosticIDs::isCodegenABICheckDiagnostic(unsigned DiagID) {
+  unsigned cat = getCategoryNumberForDiag(DiagID);
+  return DiagnosticIDs::getCategoryNameFromID(cat) == "Codegen ABI Check";
 }

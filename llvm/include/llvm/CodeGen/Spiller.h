@@ -6,8 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_CODEGEN_SPILLER_H
-#define LLVM_LIB_CODEGEN_SPILLER_H
+#ifndef LLVM_CODEGEN_SPILLER_H
+#define LLVM_CODEGEN_SPILLER_H
+
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/CodeGen/Register.h"
 
 namespace llvm {
 
@@ -15,6 +18,7 @@ class LiveRangeEdit;
 class MachineFunction;
 class MachineFunctionPass;
 class VirtRegMap;
+class VirtRegAuxInfo;
 
 /// Spiller interface.
 ///
@@ -29,14 +33,21 @@ public:
   /// spill - Spill the LRE.getParent() live interval.
   virtual void spill(LiveRangeEdit &LRE) = 0;
 
+  /// Return the registers that were spilled.
+  virtual ArrayRef<Register> getSpilledRegs() = 0;
+
+  /// Return registers that were not spilled, but otherwise replaced
+  /// (e.g. rematerialized).
+  virtual ArrayRef<Register> getReplacedRegs() = 0;
+
   virtual void postOptimization() {}
 };
 
 /// Create and return a spiller that will insert spill code directly instead
 /// of deferring though VirtRegMap.
-Spiller *createInlineSpiller(MachineFunctionPass &pass, MachineFunction &mf,
-                             VirtRegMap &vrm);
+Spiller *createInlineSpiller(MachineFunctionPass &Pass, MachineFunction &MF,
+                             VirtRegMap &VRM, VirtRegAuxInfo &VRAI);
 
 } // end namespace llvm
 
-#endif // LLVM_LIB_CODEGEN_SPILLER_H
+#endif // LLVM_CODEGEN_SPILLER_H

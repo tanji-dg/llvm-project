@@ -3,13 +3,19 @@ set(LLVM_LINK_COMPONENTS
   JITLink
   Object
   OrcShared
-  OrcTargetProcess
-  RuntimeDyld
   Support
+  TargetParser
   )
 
 add_llvm_unittest(JITLinkTests
+    AArch32Tests.cpp
+    AArch32ErrorTests.cpp
+    EHFrameSupportTests.cpp
+    JITLinkTestUtils.cpp
     LinkGraphTests.cpp
+    MachOLinkGraphTests.cpp
+    MemoryManagerErrorTests.cpp
+    StubsTests.cpp
   )
 
 target_link_libraries(JITLinkTests PRIVATE LLVMTestingSupport)

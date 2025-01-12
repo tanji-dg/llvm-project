@@ -20,7 +20,8 @@
 
 #include "NVPTX.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringMap.h"
+#include "llvm/Analysis/ConstantFolding.h"
+#include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
@@ -34,12 +35,13 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/raw_os_ostream.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Scalar.h"
-#include <sstream>
-#include <string>
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/Local.h"
+#include <algorithm>
 #define NVVM_REFLECT_FUNCTION "__nvvm_reflect"
+#define NVVM_REFLECT_OCL_FUNCTION "__nvvm_reflect_ocl"
 
 using namespace llvm;
 
@@ -78,7 +80,8 @@ static bool runNVVMReflect(Function &F, unsigned SmVersion) {
   if (!NVVMReflectEnabled)
     return false;
 
-  if (F.getName() == NVVM_REFLECT_FUNCTION) {
+  if (F.getName() == NVVM_REFLECT_FUNCTION ||
+      F.getName() == NVVM_REFLECT_OCL_FUNCTION) {
     assert(F.isDeclaration() && "_reflect function should not have a body");
     assert(F.getReturnType()->isIntegerTy() &&
            "_reflect's return type should be integer");
@@ -86,6 +89,7 @@ static bool runNVVMReflect(Function &F, unsigned SmVersion) {
   }
 
   SmallVector<Instruction *, 4> ToRemove;
+  SmallVector<Instruction *, 4> ToSimplify;
 
   // Go through the calls in this function.  Each call to __nvvm_reflect or
   // llvm.nvvm.reflect should be a CallInst with a ConstantArray argument.
@@ -119,6 +123,7 @@ static bool runNVVMReflect(Function &F, unsigned SmVersion) {
       continue;
     Function *Callee = Call->getCalledFunction();
     if (!Callee || (Callee->getName() != NVVM_REFLECT_FUNCTION &&
+                    Callee->getName() != NVVM_REFLECT_OCL_FUNCTION &&
                     Callee->getIntrinsicID() != Intrinsic::nvvm_reflect))
       continue;
 
@@ -133,15 +138,13 @@ static bool runNVVMReflect(Function &F, unsigned SmVersion) {
       // FIXME: Add assertions about ConvCall.
       Str = ConvCall->getArgOperand(0);
     }
-    assert(isa<ConstantExpr>(Str) &&
-           "Format of __nvvm__reflect function not recognized");
-    const ConstantExpr *GEP = cast<ConstantExpr>(Str);
-
-    const Value *Sym = GEP->getOperand(0);
-    assert(isa<Constant>(Sym) &&
+    // Pre opaque pointers we have a constant expression wrapping the constant
+    // string.
+    Str = Str->stripPointerCasts();
+    assert(isa<Constant>(Str) &&
            "Format of __nvvm_reflect function not recognized");
 
-    const Value *Operand = cast<Constant>(Sym)->getOperand(0);
+    const Value *Operand = cast<Constant>(Str)->getOperand(0);
     if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(Operand)) {
       // For CUDA-7.0 style __nvvm_reflect calls, we need to find the operand's
       // initializer.
@@ -171,9 +174,41 @@ static bool runNVVMReflect(Function &F, unsigned SmVersion) {
     } else if (ReflectArg == "__CUDA_ARCH") {
       ReflectVal = SmVersion * 10;
     }
+
+    // If the immediate user is a simple comparison we want to simplify it.
+    for (User *U : Call->users())
+      if (Instruction *I = dyn_cast<Instruction>(U))
+        ToSimplify.push_back(I);
+
     Call->replaceAllUsesWith(ConstantInt::get(Call->getType(), ReflectVal));
     ToRemove.push_back(Call);
   }
+
+  // The code guarded by __nvvm_reflect may be invalid for the target machine.
+  // Traverse the use-def chain, continually simplifying constant expressions
+  // until we find a terminator that we can then remove.
+  while (!ToSimplify.empty()) {
+    Instruction *I = ToSimplify.pop_back_val();
+    if (Constant *C =
+            ConstantFoldInstruction(I, F.getDataLayout())) {
+      for (User *U : I->users())
+        if (Instruction *I = dyn_cast<Instruction>(U))
+          ToSimplify.push_back(I);
+
+      I->replaceAllUsesWith(C);
+      if (isInstructionTriviallyDead(I)) {
+        ToRemove.push_back(I);
+      }
+    } else if (I->isTerminator()) {
+      ConstantFoldTerminator(I->getParent());
+    }
+  }
+
+  // Removing via isInstructionTriviallyDead may add duplicates to the ToRemove
+  // array. Filter out the duplicates before starting to erase from parent.
+  std::sort(ToRemove.begin(), ToRemove.end());
+  auto NewLastIter = llvm::unique(ToRemove);
+  ToRemove.erase(NewLastIter, ToRemove.end());
 
   for (Instruction *I : ToRemove)
     I->eraseFromParent();
@@ -185,7 +220,13 @@ bool NVVMReflect::runOnFunction(Function &F) {
   return runNVVMReflect(F, SmVersion);
 }
 
-NVVMReflectPass::NVVMReflectPass() : NVVMReflectPass(0) {}
+NVVMReflectPass::NVVMReflectPass() {
+  // Get the CPU string from the command line if not provided.
+  std::string MCPU = codegen::getMCPU();
+  StringRef SM = MCPU;
+  if (!SM.consume_front("sm_") || SM.consumeInteger(10, SmVersion))
+    SmVersion = 0;
+}
 
 PreservedAnalyses NVVMReflectPass::run(Function &F,
                                        FunctionAnalysisManager &AM) {

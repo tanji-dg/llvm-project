@@ -20,15 +20,15 @@ namespace llvm {
 struct LTOCodeGenerator;
 }
 
-namespace lld {
-namespace coff {
+namespace lld::coff {
 
 class Chunk;
 class CommonChunk;
+class COFFLinkerContext;
 class Defined;
 class DefinedAbsolute;
 class DefinedRegular;
-class DefinedRelative;
+class ImportThunkChunk;
 class LazyArchive;
 class SectionChunk;
 class Symbol;
@@ -47,7 +47,9 @@ class Symbol;
 // There is one add* function per symbol type.
 class SymbolTable {
 public:
-  void addFile(InputFile *file);
+  SymbolTable(COFFLinkerContext &c,
+              llvm::COFF::MachineTypes machine = IMAGE_FILE_MACHINE_UNKNOWN)
+      : ctx(c), machine(machine) {}
 
   // Emit errors for symbols that cannot be resolved.
   void reportUnresolvable();
@@ -55,17 +57,22 @@ public:
   // Try to resolve any undefined symbols and update the symbol table
   // accordingly, then print an error message for any remaining undefined
   // symbols and warn about imported local symbols.
-  void resolveRemainingUndefines();
+  // Returns whether more files might need to be linked in to resolve lazy
+  // symbols, in which case the caller is expected to call the function again
+  // after linking those files.
+  bool resolveRemainingUndefines();
 
-  void loadMinGWAutomaticImports();
+  // Load lazy objects that are needed for MinGW automatic import and for
+  // doing stdcall fixups.
+  void loadMinGWSymbols();
   bool handleMinGWAutomaticImport(Symbol *sym, StringRef name);
 
   // Returns a list of chunks of selected symbols.
-  std::vector<Chunk *> getChunks();
+  std::vector<Chunk *> getChunks() const;
 
   // Returns a symbol for a given name. Returns a nullptr if not found.
-  Symbol *find(StringRef name);
-  Symbol *findUnderscore(StringRef name);
+  Symbol *find(StringRef name) const;
+  Symbol *findUnderscore(StringRef name) const;
 
   // Occasionally we have to resolve an undefined symbol to its
   // mangled symbol. This function tries to find a mangled name
@@ -76,7 +83,7 @@ public:
   // Build a set of COFF objects representing the combined contents of
   // BitcodeFiles and add them to the symbol table. Called after all files are
   // added and before the writer writes results to a file.
-  void addCombinedLTOObjects();
+  void compileBitcodeFiles();
 
   // Creates an Undefined symbol for a given name.
   Symbol *addUndefined(StringRef name);
@@ -84,36 +91,54 @@ public:
   Symbol *addSynthetic(StringRef n, Chunk *c);
   Symbol *addAbsolute(StringRef n, uint64_t va);
 
-  Symbol *addUndefined(StringRef name, InputFile *f, bool isWeakAlias);
+  Symbol *addUndefined(StringRef name, InputFile *f, bool overrideLazy);
   void addLazyArchive(ArchiveFile *f, const Archive::Symbol &sym);
-  void addLazyObject(LazyObjFile *f, StringRef n);
+  void addLazyObject(InputFile *f, StringRef n);
+  void addLazyDLLSymbol(DLLFile *f, DLLFile::Symbol *sym, StringRef n);
   Symbol *addAbsolute(StringRef n, COFFSymbolRef s);
   Symbol *addRegular(InputFile *f, StringRef n,
                      const llvm::object::coff_symbol_generic *s = nullptr,
-                     SectionChunk *c = nullptr, uint32_t sectionOffset = 0);
+                     SectionChunk *c = nullptr, uint32_t sectionOffset = 0,
+                     bool isWeak = false);
   std::pair<DefinedRegular *, bool>
   addComdat(InputFile *f, StringRef n,
             const llvm::object::coff_symbol_generic *s = nullptr);
   Symbol *addCommon(InputFile *f, StringRef n, uint64_t size,
                     const llvm::object::coff_symbol_generic *s = nullptr,
                     CommonChunk *c = nullptr);
-  Symbol *addImportData(StringRef n, ImportFile *f);
-  Symbol *addImportThunk(StringRef name, DefinedImportData *s,
-                         uint16_t machine);
+  DefinedImportData *addImportData(StringRef n, ImportFile *f,
+                                   Chunk *&location);
+  Defined *addImportThunk(StringRef name, DefinedImportData *s,
+                          ImportThunkChunk *chunk);
   void addLibcall(StringRef name);
+  void addEntryThunk(Symbol *from, Symbol *to);
+  void addExitThunk(Symbol *from, Symbol *to);
+  void initializeECThunks();
 
   void reportDuplicate(Symbol *existing, InputFile *newFile,
                        SectionChunk *newSc = nullptr,
                        uint32_t newSectionOffset = 0);
 
+  COFFLinkerContext &ctx;
+  llvm::COFF::MachineTypes machine;
+
+  bool isEC() const { return machine == ARM64EC; }
+
   // A list of chunks which to be added to .rdata.
   std::vector<Chunk *> localImportChunks;
+
+  // A list of EC EXP+ symbols.
+  std::vector<Symbol *> expSymbols;
 
   // Iterates symbols in non-determinstic hash table order.
   template <typename T> void forEachSymbol(T callback) {
     for (auto &pair : symMap)
       callback(pair.second);
   }
+
+  DefinedRegular *loadConfigSym = nullptr;
+  uint32_t loadConfigSize = 0;
+  void initializeLoadConfig();
 
 private:
   /// Given a name without "__imp_" prefix, returns a defined symbol
@@ -128,13 +153,14 @@ private:
 
   llvm::DenseMap<llvm::CachedHashStringRef, Symbol *> symMap;
   std::unique_ptr<BitcodeCompiler> lto;
+  std::vector<std::pair<Symbol *, Symbol *>> entryThunks;
+  llvm::DenseMap<Symbol *, Symbol *> exitThunks;
 };
-
-extern SymbolTable *symtab;
 
 std::vector<std::string> getSymbolLocations(ObjFile *file, uint32_t symIndex);
 
-} // namespace coff
-} // namespace lld
+StringRef ltrim1(StringRef s, const char *chars);
+
+} // namespace lld::coff
 
 #endif
