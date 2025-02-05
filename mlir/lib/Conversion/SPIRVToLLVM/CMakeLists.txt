@@ -11,11 +11,15 @@ add_mlir_conversion_library(MLIRSPIRVToLLVM
   intrinsics_gen
 
   LINK_LIBS PUBLIC
-  MLIRGPU
-  MLIRSPIRV
-  MLIRSPIRVUtils
-  MLIRLLVMIR
-  MLIRStandardToLLVM
+  MLIRArithToLLVM
+  MLIRFuncToLLVM
+  MLIRGPUDialect
   MLIRIR
+  MLIRLLVMCommonConversion
+  MLIRLLVMDialect
+  MLIRMemRefToLLVM
+  MLIRSPIRVAttrToLLVMConversion
+  MLIRSPIRVDialect
+  MLIRSPIRVUtils
   MLIRTransforms
   )

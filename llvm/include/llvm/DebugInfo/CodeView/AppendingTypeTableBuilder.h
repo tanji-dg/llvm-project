@@ -11,13 +11,12 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/DebugInfo/CodeView/CodeView.h"
+#include "llvm/DebugInfo/CodeView/CVRecord.h"
 #include "llvm/DebugInfo/CodeView/SimpleTypeSerializer.h"
 #include "llvm/DebugInfo/CodeView/TypeCollection.h"
 #include "llvm/DebugInfo/CodeView/TypeIndex.h"
 #include "llvm/Support/Allocator.h"
 #include <cstdint>
-#include <memory>
 
 namespace llvm {
 namespace codeview {
@@ -37,8 +36,8 @@ public:
   ~AppendingTypeTableBuilder();
 
   // TypeCollection overrides
-  Optional<TypeIndex> getFirst() override;
-  Optional<TypeIndex> getNext(TypeIndex Prev) override;
+  std::optional<TypeIndex> getFirst() override;
+  std::optional<TypeIndex> getNext(TypeIndex Prev) override;
   CVType getType(TypeIndex Index) override;
   StringRef getTypeName(TypeIndex Index) override;
   bool contains(TypeIndex Index) override;
@@ -65,4 +64,4 @@ public:
 } // end namespace codeview
 } // end namespace llvm
 
-#endif // LLVM_DEBUGINFO_CODEVIEW_TYPETABLEBUILDER_H
+#endif // LLVM_DEBUGINFO_CODEVIEW_APPENDINGTYPETABLEBUILDER_H
