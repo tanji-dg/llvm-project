@@ -11,7 +11,7 @@
 // deque()
 // deque::iterator()
 
-// ADDITIONAL_COMPILE_FLAGS: -D_LIBCPP_ABI_INCOMPLETE_TYPES_IN_DEQUE
+// ADDITIONAL_COMPILE_FLAGS: -Wno-macro-redefined -D_LIBCPP_ABI_INCOMPLETE_TYPES_IN_DEQUE
 
 #include <deque>
 #include <cassert>
@@ -24,11 +24,10 @@ struct A {
   std::deque<A>::reverse_iterator it2;
 };
 
-int main(int, char**)
-{
+int main(int, char**) {
   A a;
   assert(a.d.size() == 0);
-  a.it = a.d.begin();
+  a.it  = a.d.begin();
   a.it2 = a.d.rend();
 
   return 0;

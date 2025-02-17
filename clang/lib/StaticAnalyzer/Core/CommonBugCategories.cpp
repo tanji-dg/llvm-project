@@ -13,6 +13,7 @@ namespace clang {
 namespace ento {
 namespace categories {
 
+const char *const AppleAPIMisuse = "API Misuse (Apple)";
 const char *const CoreFoundationObjectiveC = "Core Foundation/Objective-C";
 const char *const LogicError = "Logic error";
 const char *const MemoryRefCount =
@@ -22,6 +23,8 @@ const char *const UnixAPI = "Unix API";
 const char *const CXXObjectLifecycle = "C++ object lifecycle";
 const char *const CXXMoveSemantics = "C++ move semantics";
 const char *const SecurityError = "Security error";
+const char *const UnusedCode = "Unused code";
+const char *const TaintedData = "Tainted data used";
 } // namespace categories
 } // namespace ento
 } // namespace clang

@@ -26,6 +26,7 @@
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/EndianStream.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
@@ -42,13 +43,11 @@ using namespace llvm;
 namespace llvm {
 
 MCCodeEmitter *createMipsMCCodeEmitterEB(const MCInstrInfo &MCII,
-                                         const MCRegisterInfo &MRI,
                                          MCContext &Ctx) {
   return new MipsMCCodeEmitter(MCII, Ctx, false);
 }
 
 MCCodeEmitter *createMipsMCCodeEmitterEL(const MCInstrInfo &MCII,
-                                         const MCRegisterInfo &MRI,
                                          MCContext &Ctx) {
   return new MipsMCCodeEmitter(MCII, Ctx, true);
 }
@@ -92,8 +91,8 @@ static void LowerLargeShift(MCInst& Inst) {
 void MipsMCCodeEmitter::LowerCompactBranch(MCInst& Inst) const {
   // Encoding may be illegal !(rs < rt), but this situation is
   // easily fixed.
-  unsigned RegOp0 = Inst.getOperand(0).getReg();
-  unsigned RegOp1 = Inst.getOperand(1).getReg();
+  MCRegister RegOp0 = Inst.getOperand(0).getReg();
+  MCRegister RegOp1 = Inst.getOperand(1).getReg();
 
   unsigned Reg0 =  Ctx.getRegisterInfo()->getEncodingValue(RegOp0);
   unsigned Reg1 =  Ctx.getRegisterInfo()->getEncodingValue(RegOp1);
@@ -118,42 +117,23 @@ void MipsMCCodeEmitter::LowerCompactBranch(MCInst& Inst) const {
 }
 
 bool MipsMCCodeEmitter::isMicroMips(const MCSubtargetInfo &STI) const {
-  return STI.getFeatureBits()[Mips::FeatureMicroMips];
+  return STI.hasFeature(Mips::FeatureMicroMips);
 }
 
 bool MipsMCCodeEmitter::isMips32r6(const MCSubtargetInfo &STI) const {
-  return STI.getFeatureBits()[Mips::FeatureMips32r6];
+  return STI.hasFeature(Mips::FeatureMips32r6);
 }
 
 void MipsMCCodeEmitter::EmitByte(unsigned char C, raw_ostream &OS) const {
   OS << (char)C;
 }
 
-void MipsMCCodeEmitter::emitInstruction(uint64_t Val, unsigned Size,
-                                        const MCSubtargetInfo &STI,
-                                        raw_ostream &OS) const {
-  // Output the instruction encoding in little endian byte order.
-  // Little-endian byte ordering:
-  //   mips32r2:   4 | 3 | 2 | 1
-  //   microMIPS:  2 | 1 | 4 | 3
-  if (IsLittleEndian && Size == 4 && isMicroMips(STI)) {
-    emitInstruction(Val >> 16, 2, STI, OS);
-    emitInstruction(Val, 2, STI, OS);
-  } else {
-    for (unsigned i = 0; i < Size; ++i) {
-      unsigned Shift = IsLittleEndian ? i * 8 : (Size - 1 - i) * 8;
-      EmitByte((Val >> Shift) & 0xff, OS);
-    }
-  }
-}
-
 /// encodeInstruction - Emit the instruction.
 /// Size the instruction with Desc.getSize().
-void MipsMCCodeEmitter::
-encodeInstruction(const MCInst &MI, raw_ostream &OS,
-                  SmallVectorImpl<MCFixup> &Fixups,
-                  const MCSubtargetInfo &STI) const
-{
+void MipsMCCodeEmitter::encodeInstruction(const MCInst &MI,
+                                          SmallVectorImpl<char> &CB,
+                                          SmallVectorImpl<MCFixup> &Fixups,
+                                          const MCSubtargetInfo &STI) const {
   // Non-pseudo instructions that get changed for direct object
   // only based on operand values.
   // If this list of instructions get much longer we will move
@@ -179,7 +159,7 @@ encodeInstruction(const MCInst &MI, raw_ostream &OS,
     LowerCompactBranch(TmpInst);
   }
 
-  unsigned long N = Fixups.size();
+  size_t N = Fixups.size();
   uint32_t Binary = getBinaryCodeForInstr(TmpInst, Fixups, STI);
 
   // Check for unimplemented opcodes.
@@ -226,7 +206,16 @@ encodeInstruction(const MCInst &MI, raw_ostream &OS,
   if (!Size)
     llvm_unreachable("Desc.getSize() returns 0");
 
-  emitInstruction(Binary, Size, STI, OS);
+  auto Endian =
+      IsLittleEndian ? llvm::endianness::little : llvm::endianness::big;
+  if (Size == 2) {
+    support::endian::write<uint16_t>(CB, Binary, Endian);
+  } else if (IsLittleEndian && isMicroMips(STI)) {
+    support::endian::write<uint16_t>(CB, Binary >> 16, Endian);
+    support::endian::write<uint16_t>(CB, Binary & 0xffff, Endian);
+  } else {
+    support::endian::write<uint32_t>(CB, Binary, Endian);
+  }
 }
 
 /// getBranchTargetOpValue - Return binary encoding of the branch
@@ -735,14 +724,13 @@ getMachineOpValue(const MCInst &MI, const MCOperand &MO,
                   SmallVectorImpl<MCFixup> &Fixups,
                   const MCSubtargetInfo &STI) const {
   if (MO.isReg()) {
-    unsigned Reg = MO.getReg();
+    MCRegister Reg = MO.getReg();
     unsigned RegNo = Ctx.getRegisterInfo()->getEncodingValue(Reg);
     return RegNo;
   } else if (MO.isImm()) {
     return static_cast<unsigned>(MO.getImm());
-  } else if (MO.isFPImm()) {
-    return static_cast<unsigned>(APFloat(MO.getFPImm())
-        .bitcastToAPInt().getHiBits(32).getLimitedValue());
+  } else if (MO.isDFPImm()) {
+    return static_cast<unsigned>(bit_cast<double>(MO.getDFPImm()));
   }
   // MO must be an Expr.
   assert(MO.isExpr());
@@ -1045,7 +1033,7 @@ MipsMCCodeEmitter::getRegisterListOpValue(const MCInst &MI, unsigned OpNo,
   // placed before memory operand (register + imm).
 
   for (unsigned I = OpNo, E = MI.getNumOperands() - 2; I < E; ++I) {
-    unsigned Reg = MI.getOperand(I).getReg();
+    MCRegister Reg = MI.getOperand(I).getReg();
     unsigned RegNo = Ctx.getRegisterInfo()->getEncodingValue(Reg);
     if (RegNo != 31)
       res++;
@@ -1105,7 +1093,7 @@ MipsMCCodeEmitter::getMovePRegSingleOpValue(const MCInst &MI, unsigned OpNo,
 
   MCOperand Op = MI.getOperand(OpNo);
   assert(Op.isReg() && "Operand of movep is not a register!");
-  switch (Op.getReg()) {
+  switch (Op.getReg().id()) {
   default:
     llvm_unreachable("Unknown register for movep!");
   case Mips::ZERO:  return 0;

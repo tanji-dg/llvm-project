@@ -12,6 +12,7 @@
 #include "llvm/Analysis/DependenceGraphBuilder.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/EnumeratedArray.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/DDG.h"
@@ -239,9 +240,7 @@ template <class G> void AbstractDependenceGraphBuilder<G>::createDefUseEdges() {
         Instruction *UI = dyn_cast<Instruction>(U);
         if (!UI)
           continue;
-        NodeType *DstNode = nullptr;
-        if (IMap.find(UI) != IMap.end())
-          DstNode = IMap.find(UI)->second;
+        NodeType *DstNode = IMap.lookup(UI);
 
         // In the case of loops, the scope of the subgraph is all the
         // basic blocks (and instructions within them) belonging to the loop. We
@@ -296,7 +295,7 @@ void AbstractDependenceGraphBuilder<G>::createMemoryDependencyEdges() {
       bool BackwardEdgeCreated = false;
       for (Instruction *ISrc : SrcIList) {
         for (Instruction *IDst : DstIList) {
-          auto D = DI.depends(ISrc, IDst, true);
+          auto D = DI.depends(ISrc, IDst);
           if (!D)
             continue;
 
