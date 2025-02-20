@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 %s -triple=x86_64-apple-darwin10 -emit-llvm -o - -O3 | FileCheck -check-prefix=CHECK -check-prefix=CHECK-LP64 %s
 // RUN: %clang_cc1 %s -triple=i386-apple-darwin10 -emit-llvm -o - -O3 | FileCheck %s
-// RUN: %clang_cc1 %s -triple=aarch64_be-none-eabi -emit-llvm -o - -O3 | FileCheck %s
+// RUN: %clang_cc1 %s -triple=aarch64_be -emit-llvm -o - -O3 | FileCheck %s
 // RUN: %clang_cc1 %s -triple=thumbv7_be-none-eabi -emit-llvm -o - -O3 | FileCheck %s
 // RUN: %clang_cc1 %s -triple=x86_64-unknown-unknown -emit-llvm -o - -O3 -std=c++11 | FileCheck -check-prefix=CHECK -check-prefix=CHECK-LP64 %s
 
@@ -93,7 +93,7 @@ int test_trunc_int() {
   } const U = {15};  // 0b00001111
   return U.i;
 }
-// CHECK: define dso_local i32 @test_trunc_int()
+// CHECK: define{{.*}} i32 @test_trunc_int()
 // CHECK: ret i32 -1
 
 int test_trunc_three_bits() {
@@ -102,7 +102,16 @@ int test_trunc_three_bits() {
   } const U = {15};  // 0b00001111
   return U.i;
 }
-// CHECK: define dso_local i32 @test_trunc_three_bits()
+// CHECK: define{{.*}} i32 @test_trunc_three_bits()
+// CHECK: ret i32 -1
+
+int test_trunc_one_bit() {
+  union {
+    int i : 1; // truncated to 0b1 == -1
+  } const U = {1};  // 0b00000001
+  return U.i;
+}
+// CHECK: define{{.*}} i32 @test_trunc_one_bit()
 // CHECK: ret i32 -1
 
 int test_trunc_1() {
@@ -111,7 +120,7 @@ int test_trunc_1() {
   } const U = {15};  // 0b00001111
   return U.i;
 }
-// CHECK: define dso_local i32 @test_trunc_1()
+// CHECK: define{{.*}} i32 @test_trunc_1()
 // CHECK: ret i32 -1
 
 int test_trunc_zero() {
@@ -120,7 +129,7 @@ int test_trunc_zero() {
   } const U = {80};  // 0b01010000
   return U.i;
 }
-// CHECK: define dso_local i32 @test_trunc_zero()
+// CHECK: define{{.*}} i32 @test_trunc_zero()
 // CHECK: ret i32 0
 
 int test_constexpr() {
@@ -129,7 +138,7 @@ int test_constexpr() {
   } const U = {1 + 2 + 4 + 8}; // 0b00001111
   return U.i;
 }
-// CHECK: define dso_local i32 @test_constexpr()
+// CHECK: define{{.*}} i32 @test_constexpr()
 // CHECK: ret i32 -1
 
 int test_notrunc() {
@@ -138,7 +147,7 @@ int test_notrunc() {
   } const U = {1 + 2 + 4 + 8}; // 0b00001111
   return U.i;
 }
-// CHECK: define dso_local i32 @test_notrunc()
+// CHECK: define{{.*}} i32 @test_notrunc()
 // CHECK: ret i32 15
 
 long long test_trunc_long_long() {
@@ -147,6 +156,6 @@ long long test_trunc_long_long() {
   } const U = {0b0100111101001101};
   return U.i;
 }
-// CHECK: define dso_local i64 @test_trunc_long_long()
+// CHECK: define{{.*}} i64 @test_trunc_long_long()
 // CHECK: ret i64 3917
 }

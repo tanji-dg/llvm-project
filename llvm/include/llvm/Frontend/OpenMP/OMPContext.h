@@ -12,17 +12,17 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_OPENMP_CONTEXT_H
-#define LLVM_OPENMP_CONTEXT_H
+#ifndef LLVM_FRONTEND_OPENMP_OMPCONTEXT_H
+#define LLVM_FRONTEND_OPENMP_OMPCONTEXT_H
 
-#include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/BitVector.h"
-#include "llvm/ADT/SetVector.h"
-#include "llvm/ADT/SmallSet.h"
-#include "llvm/ADT/Triple.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/Frontend/OpenMP/OMPConstants.h"
 
 namespace llvm {
+class Triple;
 namespace omp {
 
 /// OpenMP Context related IDs and helpers
@@ -62,7 +62,7 @@ StringRef getOpenMPContextTraitSetName(TraitSet Kind);
 
 /// Parse \p Str and return the trait set it matches or
 /// TraitSelector::invalid.
-TraitSelector getOpenMPContextTraitSelectorKind(StringRef Str);
+TraitSelector getOpenMPContextTraitSelectorKind(StringRef Str, TraitSet Set);
 
 /// Return the trait selector for which \p Property is a property.
 TraitSelector getOpenMPContextTraitSelectorForProperty(TraitProperty Property);
@@ -139,6 +139,8 @@ struct VariantMatchInfo {
     // the raw string.
     if (Property == TraitProperty::device_isa___ANY)
       ISATraits.push_back(RawString);
+    if (Property == TraitProperty::target_device_isa___ANY)
+      ISATraits.push_back(RawString);
 
     RequiredTraits.set(unsigned(Property));
     if (Set == TraitSet::construct)
@@ -155,7 +157,8 @@ struct VariantMatchInfo {
 /// e.g., device={kind(host)}, and constructs traits which describe the nesting
 /// in OpenMP constructs at the location.
 struct OMPContext {
-  OMPContext(bool IsDeviceCompilation, Triple TargetTriple);
+  OMPContext(bool IsDeviceCompilation, Triple TargetTriple,
+             Triple TargetOffloadTriple, int DeviceNum);
   virtual ~OMPContext() = default;
 
   void addTrait(TraitProperty Property) {
@@ -207,4 +210,4 @@ template <> struct DenseMapInfo<omp::TraitProperty> {
 };
 
 } // end namespace llvm
-#endif // LLVM_OPENMP_CONTEXT_H
+#endif // LLVM_FRONTEND_OPENMP_OMPCONTEXT_H

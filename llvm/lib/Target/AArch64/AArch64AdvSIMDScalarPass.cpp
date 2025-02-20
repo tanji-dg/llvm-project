@@ -105,14 +105,14 @@ static bool isGPR64(unsigned Reg, unsigned SubReg,
                     const MachineRegisterInfo *MRI) {
   if (SubReg)
     return false;
-  if (Register::isVirtualRegister(Reg))
+  if (Register(Reg).isVirtual())
     return MRI->getRegClass(Reg)->hasSuperClassEq(&AArch64::GPR64RegClass);
   return AArch64::GPR64RegClass.contains(Reg);
 }
 
 static bool isFPR64(unsigned Reg, unsigned SubReg,
                     const MachineRegisterInfo *MRI) {
-  if (Register::isVirtualRegister(Reg))
+  if (Register(Reg).isVirtual())
     return (MRI->getRegClass(Reg)->hasSuperClassEq(&AArch64::FPR64RegClass) &&
             SubReg == 0) ||
            (MRI->getRegClass(Reg)->hasSuperClassEq(&AArch64::FPR128RegClass) &&
@@ -377,8 +377,7 @@ void AArch64AdvSIMDScalar::transformInstruction(MachineInstr &MI) {
 // processMachineBasicBlock - Main optimzation loop.
 bool AArch64AdvSIMDScalar::processMachineBasicBlock(MachineBasicBlock *MBB) {
   bool Changed = false;
-  for (MachineBasicBlock::iterator I = MBB->begin(), E = MBB->end(); I != E;) {
-    MachineInstr &MI = *I++;
+  for (MachineInstr &MI : llvm::make_early_inc_range(*MBB)) {
     if (isProfitableToTransform(MI)) {
       transformInstruction(MI);
       Changed = true;
@@ -399,8 +398,8 @@ bool AArch64AdvSIMDScalar::runOnMachineFunction(MachineFunction &mf) {
   TII = mf.getSubtarget().getInstrInfo();
 
   // Just check things on a one-block-at-a-time basis.
-  for (MachineFunction::iterator I = mf.begin(), E = mf.end(); I != E; ++I)
-    if (processMachineBasicBlock(&*I))
+  for (MachineBasicBlock &MBB : mf)
+    if (processMachineBasicBlock(&MBB))
       Changed = true;
   return Changed;
 }

@@ -1,53 +1,41 @@
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-
-# RuntimeTesting needs exceptions enabled
-set(LLVM_REQUIRES_EH ON)
-set(LLVM_REQUIRES_RTTI ON)
-add_library(RuntimeTesting
-  testing.cpp
-)
-llvm_update_compile_flags(RuntimeTesting)
-
-if (LLVM_LINK_LLVM_DYLIB)
-  set(llvm_libs LLVM)
-else()
-  llvm_map_components_to_libnames(llvm_libs Support)
-endif()
-target_link_libraries(RuntimeTesting
-  FortranRuntime
-  ${llvm_libs}
-)
-
-add_flang_nongtest_unittest(format
-  RuntimeTesting
-  FortranRuntime
-)
-
-add_flang_nongtest_unittest(hello
-  RuntimeTesting
-  FortranRuntime
-)
-
-# This test is not run by default as it requires input.
-add_executable(external-hello-world
-  external-hello.cpp
+add_flang_unittest(FlangRuntimeTests
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/AccessTest.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Allocatable.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/ArrayConstructor.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/BufferTest.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/CharacterTest.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/CommandTest.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Complex.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/CrashHandlerFixture.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Derived.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/ExternalIOTest.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Format.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Inquiry.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/ListInputTest.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/LogicalFormatTest.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Matmul.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/MatmulTranspose.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/MiscIntrinsic.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Namelist.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Numeric.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/NumericalFormatTest.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Pointer.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Ragged.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Random.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Reduction.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/RuntimeCrashTest.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Stop.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Support.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Time.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/TemporaryStack.cpp
+  ${FLANG_RT_SOURCE_DIR}/unittests/Runtime/Transformational.cpp
 )
 
-target_link_libraries(external-hello-world
-  FortranRuntime
+target_link_libraries(FlangRuntimeTests
+  PRIVATE
+  flang_rt.runtime
 )
 
-add_flang_nongtest_unittest(external-io
-  RuntimeTesting
-  FortranRuntime
-)
+target_compile_definitions(FlangRuntimeTests PRIVATE NOT_EXE="$<TARGET_FILE:not>")
 
-add_flang_nongtest_unittest(list-input
-  RuntimeTesting
-  FortranRuntime
-)
-
-add_flang_nongtest_unittest(character
-  RuntimeTesting
-  FortranRuntime
-)
+add_subdirectory(CUDA)

@@ -263,7 +263,13 @@ void writeToJson(llvm::raw_ostream &OS, const IncludeFixerContext& Context) {
 }
 
 int includeFixerMain(int argc, const char **argv) {
-  tooling::CommonOptionsParser options(argc, argv, IncludeFixerCategory);
+  auto ExpectedParser =
+      tooling::CommonOptionsParser::create(argc, argv, IncludeFixerCategory);
+  if (!ExpectedParser) {
+    llvm::errs() << ExpectedParser.takeError();
+    return 1;
+  }
+  tooling::CommonOptionsParser &options = ExpectedParser.get();
   tooling::ClangTool tool(options.getCompilations(),
                           options.getSourcePathList());
 
@@ -409,7 +415,7 @@ int includeFixerMain(int argc, const char **argv) {
       llvm::errs() << llvm::toString(InsertStyle.takeError()) << "\n";
       return 1;
     }
-    auto Buffer = llvm::MemoryBuffer::getFile(FilePath);
+    auto Buffer = llvm::MemoryBuffer::getFile(FilePath, /*IsText=*/true);
     if (!Buffer) {
       errs() << "Couldn't open file: " + FilePath.str() + ": "
              << Buffer.getError().message() + "\n";

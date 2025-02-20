@@ -42,7 +42,6 @@
 //===---------------------------------------------------------------------===//
 
 #include "PPC.h"
-#include "PPCInstrBuilder.h"
 #include "PPCInstrInfo.h"
 #include "PPCTargetMachine.h"
 #include "llvm/ADT/DenseMap.h"
@@ -158,7 +157,7 @@ private:
 
   // Return true iff the given register is in the given class.
   bool isRegInClass(unsigned Reg, const TargetRegisterClass *RC) {
-    if (Register::isVirtualRegister(Reg))
+    if (Register(Reg).isVirtual())
       return RC->hasSubClassEq(MRI->getRegClass(Reg));
     return RC->contains(Reg);
   }
@@ -519,6 +518,8 @@ bool PPCVSXSwapRemoval::gatherVectorInstructions() {
       case PPC::XXSLDWI:
       case PPC::XSCVDPSPN:
       case PPC::XSCVSPDPN:
+      case PPC::MTVSCR:
+      case PPC::MFVSCR:
         break;
       }
     }
@@ -559,7 +560,7 @@ unsigned PPCVSXSwapRemoval::lookThruCopyLike(unsigned SrcReg,
   if (!MI->isCopyLike())
     return SrcReg;
 
-  unsigned CopySrcReg;
+  Register CopySrcReg;
   if (MI->isCopy())
     CopySrcReg = MI->getOperand(1).getReg();
   else {
@@ -567,7 +568,7 @@ unsigned PPCVSXSwapRemoval::lookThruCopyLike(unsigned SrcReg,
     CopySrcReg = MI->getOperand(2).getReg();
   }
 
-  if (!Register::isVirtualRegister(CopySrcReg)) {
+  if (!CopySrcReg.isVirtual()) {
     if (!isScalarVecReg(CopySrcReg))
       SwapVector[VecIdx].MentionsPhysVR = 1;
     return CopySrcReg;
@@ -606,7 +607,7 @@ void PPCVSXSwapRemoval::formWebs() {
       if (!isVecReg(Reg) && !isScalarVecReg(Reg))
         continue;
 
-      if (!Register::isVirtualRegister(Reg)) {
+      if (!Reg.isVirtual()) {
         if (!(MI->isCopy() && isScalarVecReg(Reg)))
           SwapVector[EntryIdx].MentionsPhysVR = 1;
         continue;
@@ -616,7 +617,7 @@ void PPCVSXSwapRemoval::formWebs() {
         continue;
 
       MachineInstr* DefMI = MRI->getVRegDef(Reg);
-      assert(SwapMap.find(DefMI) != SwapMap.end() &&
+      assert(SwapMap.contains(DefMI) &&
              "Inconsistency: def of vector reg not found in swap map!");
       int DefIdx = SwapMap[DefMI];
       (void)EC->unionSets(SwapVector[DefIdx].VSEId,

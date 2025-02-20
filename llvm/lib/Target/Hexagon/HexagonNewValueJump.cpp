@@ -13,10 +13,10 @@
 // Having said that, we should re-attempt to pull this earlier at some point
 // in future.
 
-// The basic approach looks for sequence of predicated jump, compare instruciton
-// that genereates the predicate and, the feeder to the predicate. Once it finds
+// The basic approach looks for sequence of predicated jump, compare instruction
+// that generates the predicate and, the feeder to the predicate. Once it finds
 // all, it collapses compare and jump instruction into a new value jump
-// intstructions.
+// instructions.
 //
 //===----------------------------------------------------------------------===//
 
@@ -61,8 +61,7 @@ static cl::opt<int> DbgNVJCount("nvj-count", cl::init(-1), cl::Hidden,
     "New Value Jump"));
 
 static cl::opt<bool> DisableNewValueJumps("disable-nvjump", cl::Hidden,
-    cl::ZeroOrMore, cl::init(false),
-    cl::desc("Disable New Value Jumps"));
+                                          cl::desc("Disable New Value Jumps"));
 
 namespace llvm {
 
@@ -79,7 +78,7 @@ namespace {
     HexagonNewValueJump() : MachineFunctionPass(ID) {}
 
     void getAnalysisUsage(AnalysisUsage &AU) const override {
-      AU.addRequired<MachineBranchProbabilityInfo>();
+      AU.addRequired<MachineBranchProbabilityInfoWrapperPass>();
       MachineFunctionPass::getAnalysisUsage(AU);
     }
 
@@ -108,7 +107,7 @@ char HexagonNewValueJump::ID = 0;
 
 INITIALIZE_PASS_BEGIN(HexagonNewValueJump, "hexagon-nvj",
                       "Hexagon NewValueJump", false, false)
-INITIALIZE_PASS_DEPENDENCY(MachineBranchProbabilityInfo)
+INITIALIZE_PASS_DEPENDENCY(MachineBranchProbabilityInfoWrapperPass)
 INITIALIZE_PASS_END(HexagonNewValueJump, "hexagon-nvj",
                     "Hexagon NewValueJump", false, false)
 
@@ -276,7 +275,7 @@ static bool canCompareBeNewValueJump(const HexagonInstrInfo *QII,
       return false;
   }
 
-  unsigned cmpReg1, cmpOp2 = 0; // cmpOp2 assignment silences compiler warning.
+  Register cmpReg1, cmpOp2;
   cmpReg1 = MI.getOperand(1).getReg();
 
   if (secondReg) {
@@ -291,7 +290,7 @@ static bool canCompareBeNewValueJump(const HexagonInstrInfo *QII,
     // at machine code level, we don't need this, but if we decide
     // to move new value jump prior to RA, we would be needing this.
     MachineRegisterInfo &MRI = MF.getRegInfo();
-    if (!Register::isPhysicalRegister(cmpOp2)) {
+    if (!cmpOp2.isPhysical()) {
       MachineInstr *def = MRI.getVRegDef(cmpOp2);
       if (def->getOpcode() == TargetOpcode::COPY)
         return false;
@@ -460,7 +459,7 @@ bool HexagonNewValueJump::runOnMachineFunction(MachineFunction &MF) {
   QII = static_cast<const HexagonInstrInfo *>(MF.getSubtarget().getInstrInfo());
   QRI = static_cast<const HexagonRegisterInfo *>(
       MF.getSubtarget().getRegisterInfo());
-  MBPI = &getAnalysis<MachineBranchProbabilityInfo>();
+  MBPI = &getAnalysis<MachineBranchProbabilityInfoWrapperPass>().getMBPI();
 
   if (DisableNewValueJumps ||
       !MF.getSubtarget<HexagonSubtarget>().useNewValueJumps())
@@ -481,7 +480,7 @@ bool HexagonNewValueJump::runOnMachineFunction(MachineFunction &MF) {
     bool foundJump    = false;
     bool foundCompare = false;
     bool invertPredicate = false;
-    unsigned predReg = 0; // predicate reg of the jump.
+    Register predReg; // predicate reg of the jump.
     unsigned cmpReg1 = 0;
     int cmpOp2 = 0;
     MachineBasicBlock::iterator jmpPos;
@@ -517,7 +516,7 @@ bool HexagonNewValueJump::runOnMachineFunction(MachineFunction &MF) {
         jmpPos = MII;
         jmpInstr = &MI;
         predReg = MI.getOperand(0).getReg();
-        afterRA = Register::isPhysicalRegister(predReg);
+        afterRA = predReg.isPhysical();
 
         // If ifconverter had not messed up with the kill flags of the
         // operands, the following check on the kill flag would suffice.
@@ -535,13 +534,9 @@ bool HexagonNewValueJump::runOnMachineFunction(MachineFunction &MF) {
         // I am doing this only because LLVM does not provide LiveOut
         // at the BB level.
         bool predLive = false;
-        for (MachineBasicBlock::const_succ_iterator SI = MBB->succ_begin(),
-                                                    SIE = MBB->succ_end();
-             SI != SIE; ++SI) {
-          MachineBasicBlock *succMBB = *SI;
-          if (succMBB->isLiveIn(predReg))
+        for (const MachineBasicBlock *SuccMBB : MBB->successors())
+          if (SuccMBB->isLiveIn(predReg))
             predLive = true;
-        }
         if (predLive)
           break;
 

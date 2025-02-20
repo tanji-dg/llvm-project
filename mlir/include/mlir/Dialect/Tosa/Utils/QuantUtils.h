@@ -11,13 +11,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef DIALECT_TOSA_UTILS_QUANT_UTILS_H
-#define DIALECT_TOSA_UTILS_QUANT_UTILS_H
+#ifndef MLIR_DIALECT_TOSA_UTILS_QUANTUTILS_H
+#define MLIR_DIALECT_TOSA_UTILS_QUANTUTILS_H
 
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 
-#include "mlir/Dialect/Quant/FakeQuantSupport.h"
-#include "mlir/Dialect/Quant/UniformSupport.h"
+#include "mlir/Dialect/Quant/Utils/FakeQuantSupport.h"
+#include "mlir/Dialect/Quant/Utils/UniformSupport.h"
 
 namespace mlir {
 namespace tosa {
@@ -34,6 +34,9 @@ void computeMultiplierAndShift(double scale, int32_t &multiplier,
 //// Builds ConvOpQuantizationAttr from input and weight.
 ConvOpQuantizationAttr buildConvOpQuantizationAttr(OpBuilder &builder,
                                                    Value input, Value weight);
+
+std::pair<Value, Value> createZPsAsConst(OpBuilder &builder, Value input,
+                                         Value weight);
 
 //// Builds MatMulOpQuantizationAttr for MatMul operations from A and B.
 MatMulOpQuantizationAttr buildMatMulOpQuantizationAttr(OpBuilder &builder,
@@ -68,4 +71,4 @@ TypeAttr buildQTypeAttrFromMinMax(OpBuilder builder, Type inputDType,
 } // namespace tosa
 } // namespace mlir
 
-#endif // DIALECT_TOSA_UTILS_QUANT_UTILS_H
+#endif // MLIR_DIALECT_TOSA_UTILS_QUANTUTILS_H

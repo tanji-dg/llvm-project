@@ -11,11 +11,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "AArch64MCAsmInfo.h"
-#include "llvm/ADT/Triple.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/TargetParser/Triple.h"
 using namespace llvm;
 
 enum AsmWriterVariantTy {
@@ -111,7 +111,7 @@ AArch64MCAsmInfoMicrosoftCOFF::AArch64MCAsmInfoMicrosoftCOFF() {
   SupportsDebugInformation = true;
   CodePointerSize = 8;
 
-  CommentString = ";";
+  CommentString = "//";
   ExceptionsType = ExceptionHandling::WinEH;
   WinEHEncodingType = WinEH::EncodingType::Itanium;
 }

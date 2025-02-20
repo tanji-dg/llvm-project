@@ -154,7 +154,7 @@ define <2 x double> @ceil_v2f64(<2 x double> %p) {
 }
 declare <2 x double> @llvm.ceil.v2f64(<2 x double> %p)
 
-define <2 x double> @ceil_v2f64_load(<2 x double>* %ptr) {
+define <2 x double> @ceil_v2f64_load(ptr %ptr) {
 ; SSE41-LABEL: ceil_v2f64_load:
 ; SSE41:       ## %bb.0:
 ; SSE41-NEXT:    movupd (%rdi), %xmm0
@@ -170,7 +170,7 @@ define <2 x double> @ceil_v2f64_load(<2 x double>* %ptr) {
 ; AVX512:       ## %bb.0:
 ; AVX512-NEXT:    vroundpd $10, (%rdi), %xmm0
 ; AVX512-NEXT:    retq
-  %p = load <2 x double>, <2 x double>* %ptr, align 1
+  %p = load <2 x double>, ptr %ptr, align 1
   %t = call <2 x double> @llvm.ceil.v2f64(<2 x double> %p)
   ret <2 x double> %t
 }
@@ -195,7 +195,7 @@ define <4 x float> @ceil_v4f32(<4 x float> %p) {
 }
 declare <4 x float> @llvm.ceil.v4f32(<4 x float> %p)
 
-define <4 x float> @ceil_v4f32_load(<4 x float>* %ptr) {
+define <4 x float> @ceil_v4f32_load(ptr %ptr) {
 ; SSE41-LABEL: ceil_v4f32_load:
 ; SSE41:       ## %bb.0:
 ; SSE41-NEXT:    movups (%rdi), %xmm0
@@ -211,7 +211,7 @@ define <4 x float> @ceil_v4f32_load(<4 x float>* %ptr) {
 ; AVX512:       ## %bb.0:
 ; AVX512-NEXT:    vroundps $10, (%rdi), %xmm0
 ; AVX512-NEXT:    retq
-  %p = load <4 x float>, <4 x float>* %ptr, align 1
+  %p = load <4 x float>, ptr %ptr, align 1
   %t = call <4 x float> @llvm.ceil.v4f32(<4 x float> %p)
   ret <4 x float> %t
 }
@@ -1679,10 +1679,9 @@ define <4 x float> @floor_mask_ss_mask8(<4 x float> %x, <4 x float> %y, <4 x flo
 ; SSE41:       ## %bb.0:
 ; SSE41-NEXT:    roundss $9, %xmm0, %xmm3
 ; SSE41-NEXT:    cmpeqss %xmm1, %xmm0
-; SSE41-NEXT:    andps %xmm0, %xmm3
-; SSE41-NEXT:    andnps %xmm2, %xmm0
-; SSE41-NEXT:    orps %xmm3, %xmm0
-; SSE41-NEXT:    blendps {{.*#+}} xmm0 = xmm0[0],xmm1[1,2,3]
+; SSE41-NEXT:    blendvps %xmm0, %xmm3, %xmm2
+; SSE41-NEXT:    blendps {{.*#+}} xmm2 = xmm2[0],xmm1[1,2,3]
+; SSE41-NEXT:    movaps %xmm2, %xmm0
 ; SSE41-NEXT:    retq
 ;
 ; AVX-LABEL: floor_mask_ss_mask8:
@@ -1747,10 +1746,9 @@ define <2 x double> @floor_mask_sd_mask8(<2 x double> %x, <2 x double> %y, <2 x 
 ; SSE41:       ## %bb.0:
 ; SSE41-NEXT:    roundsd $9, %xmm0, %xmm3
 ; SSE41-NEXT:    cmpeqsd %xmm1, %xmm0
-; SSE41-NEXT:    andpd %xmm0, %xmm3
-; SSE41-NEXT:    andnpd %xmm2, %xmm0
-; SSE41-NEXT:    orpd %xmm3, %xmm0
-; SSE41-NEXT:    blendpd {{.*#+}} xmm0 = xmm0[0],xmm1[1]
+; SSE41-NEXT:    blendvpd %xmm0, %xmm3, %xmm2
+; SSE41-NEXT:    blendpd {{.*#+}} xmm2 = xmm2[0],xmm1[1]
+; SSE41-NEXT:    movapd %xmm2, %xmm0
 ; SSE41-NEXT:    retq
 ;
 ; AVX-LABEL: floor_mask_sd_mask8:
@@ -2671,10 +2669,9 @@ define <4 x float> @ceil_mask_ss_mask8(<4 x float> %x, <4 x float> %y, <4 x floa
 ; SSE41:       ## %bb.0:
 ; SSE41-NEXT:    roundss $10, %xmm0, %xmm3
 ; SSE41-NEXT:    cmpeqss %xmm1, %xmm0
-; SSE41-NEXT:    andps %xmm0, %xmm3
-; SSE41-NEXT:    andnps %xmm2, %xmm0
-; SSE41-NEXT:    orps %xmm3, %xmm0
-; SSE41-NEXT:    blendps {{.*#+}} xmm0 = xmm0[0],xmm1[1,2,3]
+; SSE41-NEXT:    blendvps %xmm0, %xmm3, %xmm2
+; SSE41-NEXT:    blendps {{.*#+}} xmm2 = xmm2[0],xmm1[1,2,3]
+; SSE41-NEXT:    movaps %xmm2, %xmm0
 ; SSE41-NEXT:    retq
 ;
 ; AVX-LABEL: ceil_mask_ss_mask8:
@@ -2739,10 +2736,9 @@ define <2 x double> @ceil_mask_sd_mask8(<2 x double> %x, <2 x double> %y, <2 x d
 ; SSE41:       ## %bb.0:
 ; SSE41-NEXT:    roundsd $10, %xmm0, %xmm3
 ; SSE41-NEXT:    cmpeqsd %xmm1, %xmm0
-; SSE41-NEXT:    andpd %xmm0, %xmm3
-; SSE41-NEXT:    andnpd %xmm2, %xmm0
-; SSE41-NEXT:    orpd %xmm3, %xmm0
-; SSE41-NEXT:    blendpd {{.*#+}} xmm0 = xmm0[0],xmm1[1]
+; SSE41-NEXT:    blendvpd %xmm0, %xmm3, %xmm2
+; SSE41-NEXT:    blendpd {{.*#+}} xmm2 = xmm2[0],xmm1[1]
+; SSE41-NEXT:    movapd %xmm2, %xmm0
 ; SSE41-NEXT:    retq
 ;
 ; AVX-LABEL: ceil_mask_sd_mask8:
