@@ -42,3 +42,12 @@ jobs:
 
     - name: Build
       run: ninja -C build llvm-tblgen clang-tblgen clang
+
+    - name: Archive Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: LLVM-Windows-${{ matrix.build_type }}-Artifacts
+        path: |
+          build/bin
+          build/lib
+        retention-days: 3
