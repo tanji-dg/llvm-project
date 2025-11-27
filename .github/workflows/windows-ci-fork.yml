@@ -16,20 +16,6 @@ jobs:
         build_type: [Release, Debug, RelWithDebInfo, MinSizeRel]
     
     steps:
-    - name: Free Disk Space (Maximize for Debug Build)
-      shell: powershell
-      run: |
-        # 巨大なDebugビルドのために、プリインストールされた不要なソフトウェアを削除して空き容量を確保します
-        Write-Host "Cleaning up disk space..."
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "C:\Android"
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "C:\Haskell"
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "C:\Program Files\Microsoft SQL Server"
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "C:\Program Files\dotnet"
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "C:\Rust"
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "C:\hostedtoolcache\windows\Java"
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "C:\hostedtoolcache\windows\Ruby"
-        Write-Host "Disk space cleanup complete."
-
     - name: Checkout
       uses: actions/checkout@v4
       with:
