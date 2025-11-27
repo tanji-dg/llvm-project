@@ -1,0 +1,44 @@
+name: Daily Rebase and Trigger Windows CI
+
+on:
+  schedule:
+    # 毎日 UTC 0:00 (JST 09:00) に実行
+    - cron: '0 0 * * *'
+  workflow_dispatch: # 手動実行用
+
+permissions:
+  contents: write
+
+jobs:
+  rebase-and-push:
+    runs-on: ubuntu-latest
+    if: github.repository == 'tanji-dg/llvm-project'
+    steps:
+      - name: Checkout windows-ci-config branch
+        uses: actions/checkout@v4
+        with:
+          ref: windows-ci-config
+          fetch-depth: 0 # rebaseのために全履歴が必要
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch main
+        run: git fetch origin main
+
+      - name: Rebase windows-ci-config onto origin/main
+        run: |
+          echo "Rebasing windows-ci-config onto origin/main..."
+          if ! git rebase origin/main; then
+            echo "::error::Rebase failed due to conflicts. Please resolve conflicts manually."
+            git rebase --abort
+            exit 1
+          fi
+
+      - name: Push changes
+        run: |
+          # Azure Pipelines等の外部CIはGITHUB_TOKENによるPushでも通常トリガーされます
+          git push --force origin windows-ci-config
