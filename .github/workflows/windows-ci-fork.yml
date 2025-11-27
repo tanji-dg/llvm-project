@@ -27,7 +27,6 @@ jobs:
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "C:\Program Files\dotnet"
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "C:\Rust"
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "C:\hostedtoolcache\windows\Java"
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "C:\hostedtoolcache\windows\Python"
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "C:\hostedtoolcache\windows\Ruby"
         Write-Host "Disk space cleanup complete."
 
@@ -45,6 +44,7 @@ jobs:
       run: choco install ninja
 
     - name: Configure CMake
+      shell: cmd
       run: |
         cmake -S llvm -B build -G Ninja ^
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} ^
