@@ -2,12 +2,13 @@ name: Daily Rebase and Trigger Windows CI
 
 on:
   schedule:
-    # 毎日 UTC 0:00 (JST 09:00) に実行
-    - cron: '0 0 * * *'
+    # JST 7:00 AM Mon-Fri (UTC 22:00 Sun-Thu)
+    - cron: '0 22 * * 0-4'
   workflow_dispatch: # 手動実行用
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   rebase-and-push:
@@ -42,3 +43,9 @@ jobs:
         run: |
           # Azure Pipelines等の外部CIはGITHUB_TOKENによるPushでも通常トリガーされます
           git push --force origin windows-ci-config
+
+      - name: Trigger Windows CI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run windows-ci-fork.yml --ref windows-ci-config
