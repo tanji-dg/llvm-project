@@ -2,6 +2,7 @@
 
 from mlir.ir import *
 from mlir.dialects import transform
+from mlir.dialects.transform import structured
 from mlir.dialects.transform import pdl as transform_pdl
 
 
@@ -302,6 +303,19 @@ def testApplyPatternsOpWithType(module: Module):
 
 
 @run
+def testApplyLinalgSwapExtractSliceWithFillPattern(module: Module):
+    sequence = transform.SequenceOp(
+        transform.FailurePropagationMode.Propagate, [], transform.AnyOpType.get()
+    )
+    with InsertionPoint(sequence.body):
+        with InsertionPoint(transform.ApplyPatternsOp(sequence.bodyTarget).patterns):
+            structured.apply_patterns_linalg_swap_extract_slice_with_fill()
+        transform.YieldOp()
+    # CHECK-LABEL: TEST: testApplyLinalgSwapExtractSliceWithFillPattern
+    # CHECK: transform.apply_patterns.linalg.swap_extract_slice_with_fill
+
+
+@run
 def testReplicateOp(module: Module):
     with_pdl = transform_pdl.WithPDLPatternsOp(transform.AnyOpType.get())
     with InsertionPoint(with_pdl.body):
@@ -401,3 +415,55 @@ def testApplyRegisteredPassOp(module: Module):
             options={"exclude": (symbol_a, symbol_b)},
         )
         transform.YieldOp()
+
+
+# CHECK-LABEL: TEST: testForeachOp
+@run
+def testForeachOp(module: Module):
+    # CHECK: transform.sequence
+    sequence = transform.SequenceOp(
+        transform.FailurePropagationMode.Propagate,
+        [transform.AnyOpType.get()],
+        transform.AnyOpType.get(),
+    )
+    with InsertionPoint(sequence.body):
+        # CHECK: {{.*}} = foreach %{{.*}} : !transform.any_op -> !transform.any_op
+        foreach1 = transform.ForeachOp(
+            (transform.AnyOpType.get(),), (sequence.bodyTarget,)
+        )
+        with InsertionPoint(foreach1.body):
+            # CHECK: transform.yield {{.*}} : !transform.any_op
+            transform.yield_(foreach1.bodyTargets)
+
+        a_val = transform.get_operand(
+            transform.AnyValueType.get(), foreach1.result, [0]
+        )
+        a_param = transform.param_constant(
+            transform.AnyParamType.get(), StringAttr.get("a_param")
+        )
+
+        # CHECK: {{.*}} = foreach %{{.*}}, %{{.*}}, %{{.*}} : !transform.any_op, !transform.any_value, !transform.any_param -> !transform.any_value, !transform.any_param
+        foreach2 = transform.foreach(
+            (transform.AnyValueType.get(), transform.AnyParamType.get()),
+            (sequence.bodyTarget, a_val, a_param),
+        )
+        with InsertionPoint(foreach2.owner.body):
+            # CHECK: transform.yield {{.*}} : !transform.any_value, !transform.any_param
+            transform.yield_(foreach2.owner.bodyTargets[1:3])
+
+        another_param = transform.param_constant(
+            transform.AnyParamType.get(), StringAttr.get("another_param")
+        )
+        params = transform.merge_handles([a_param, another_param])
+
+        # CHECK: {{.*}} = foreach %{{.*}}, %{{.*}}, %{{.*}} with_zip_shortest : !transform.any_op, !transform.any_param, !transform.any_param -> !transform.any_op
+        foreach3 = transform.foreach(
+            (transform.AnyOpType.get(),),
+            (foreach1.result, foreach2[1], params),
+            with_zip_shortest=True,
+        )
+        with InsertionPoint(foreach3.owner.body):
+            # CHECK: transform.yield {{.*}} : !transform.any_op
+            transform.yield_((foreach3.owner.bodyTargets[0],))
+
+        transform.yield_((foreach3,))

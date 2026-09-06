@@ -683,7 +683,7 @@ define <1 x i64> @mulls_v2i32_0(<2 x i32> %s0, <2 x i32> %s1) {
 ; CHECK-GI-NEXT:    sshll v1.2d, v1.2s, #0
 ; CHECK-GI-NEXT:    fmov x8, d0
 ; CHECK-GI-NEXT:    fmov x9, d1
-; CHECK-GI-NEXT:    mul x8, x8, x9
+; CHECK-GI-NEXT:    smull x8, w8, w9
 ; CHECK-GI-NEXT:    fmov d0, x8
 ; CHECK-GI-NEXT:    ret
 entry:
@@ -786,7 +786,7 @@ define <2 x i8> @extract_scalable_vec() vscale_range(1,16) "target-features"="+s
 ; CHECK-GI-LABEL: extract_scalable_vec:
 ; CHECK-GI:       // %bb.0: // %entry
 ; CHECK-GI-NEXT:    mov x8, xzr
-; CHECK-GI-NEXT:    mov x9, #1 // =0x1
+; CHECK-GI-NEXT:    mov w9, #1 // =0x1
 ; CHECK-GI-NEXT:    ld1 { v0.b }[0], [x8]
 ; CHECK-GI-NEXT:    ldr b1, [x9]
 ; CHECK-GI-NEXT:    adrp x8, .LCPI36_0

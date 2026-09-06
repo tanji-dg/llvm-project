@@ -545,6 +545,12 @@ public:
   /// This method erases all operations in a block.
   virtual void eraseBlock(Block *block);
 
+  /// Erase the specified results of the given operation. Results cannot be
+  /// erased directly, so the implementation creates a new replacement
+  /// operation and erases the original operation. The new operation is
+  /// returned.
+  Operation *eraseOpResults(Operation *op, const BitVector &eraseIndices);
+
   /// Inline the operations of block 'source' into block 'dest' before the given
   /// position. The source block will be deleted and must have no uses.
   /// 'argValues' is used to replace the block arguments of 'source'.
@@ -853,11 +859,8 @@ public:
             typename... ConstructorArgs,
             typename = std::enable_if_t<sizeof...(Ts) != 0>>
   RewritePatternSet &add(ConstructorArg &&arg, ConstructorArgs &&...args) {
-    // The following expands a call to emplace_back for each of the pattern
-    // types 'Ts'.
-    (addImpl<Ts>(/*debugLabels=*/{}, std::forward<ConstructorArg>(arg),
-                 std::forward<ConstructorArgs>(args)...),
-     ...);
+    addImplForEach<Ts...>(/*debugLabels=*/{}, std::forward<ConstructorArg>(arg),
+                          std::forward<ConstructorArgs>(args)...);
     return *this;
   }
   /// An overload of the above `add` method that allows for attaching a set
@@ -870,9 +873,8 @@ public:
   RewritePatternSet &addWithLabel(ArrayRef<StringRef> debugLabels,
                                   ConstructorArg &&arg,
                                   ConstructorArgs &&...args) {
-    // The following expands a call to emplace_back for each of the pattern
-    // types 'Ts'.
-    (addImpl<Ts>(debugLabels, arg, args...), ...);
+    addImplForEach<Ts...>(debugLabels, std::forward<ConstructorArg>(arg),
+                          std::forward<ConstructorArgs>(args)...);
     return *this;
   }
 
@@ -936,9 +938,8 @@ public:
             typename... ConstructorArgs,
             typename = std::enable_if_t<sizeof...(Ts) != 0>>
   RewritePatternSet &insert(ConstructorArg &&arg, ConstructorArgs &&...args) {
-    // The following expands a call to emplace_back for each of the pattern
-    // types 'Ts'.
-    (addImpl<Ts>(/*debugLabels=*/{}, arg, args...), ...);
+    addImplForEach<Ts...>(/*debugLabels=*/{}, std::forward<ConstructorArg>(arg),
+                          std::forward<ConstructorArgs>(args)...);
     return *this;
   }
 
@@ -988,6 +989,22 @@ public:
   }
 
 private:
+  /// Add an instance of each pattern type. A single pattern receives perfectly
+  /// forwarded arguments. Multiple patterns receive lvalues so that a shared
+  /// rvalue argument is copied instead of moved from repeatedly.
+  template <typename... Ts, typename ConstructorArg,
+            typename... ConstructorArgs>
+  void addImplForEach(ArrayRef<StringRef> debugLabels, ConstructorArg &&arg,
+                      ConstructorArgs &&...args) {
+    if constexpr (sizeof...(Ts) == 1) {
+      (addImpl<Ts>(debugLabels, std::forward<ConstructorArg>(arg),
+                   std::forward<ConstructorArgs>(args)...),
+       ...);
+    } else {
+      (addImpl<Ts>(debugLabels, arg, args...), ...);
+    }
+  }
+
   /// Add an instance of the pattern type 'T'. Return a reference to `this` for
   /// chaining insertions.
   template <typename T, typename... Args>
